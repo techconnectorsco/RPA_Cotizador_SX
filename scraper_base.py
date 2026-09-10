@@ -30,6 +30,7 @@ class ScraperBase(ABC):
     nombre: str  # ej: "Intelec"
     url_base: str  # ej: "https://www.intelec.co.cr"
     requiere_login: bool = False
+    usa_browser_compartido: bool = True
 
     def __init__(self, browser: Browser):
         self.browser = browser
