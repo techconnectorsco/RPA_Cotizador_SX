@@ -1,0 +1,35 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Secretos
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Playwright
+playwright-report/
+test-results/
+
+# Salidas de prueba
+salidas/*.json
+!salidas/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+*json
+*.html
+*.png
+*.sql
+
