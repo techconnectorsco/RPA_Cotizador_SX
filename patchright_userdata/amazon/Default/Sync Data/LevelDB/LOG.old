@@ -1,2 +1,3 @@
-2026/09/10-12:05:27.306 3fcc Creating DB D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Sync Data\LevelDB since it was missing.
-2026/09/10-12:05:27.427 3fcc Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/09/10-20:49:55.140 2d40 Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/09/10-20:49:55.141 2d40 Recovering log #3
+2026/09/10-20:49:55.141 2d40 Reusing old log D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Sync Data\LevelDB/000003.log 

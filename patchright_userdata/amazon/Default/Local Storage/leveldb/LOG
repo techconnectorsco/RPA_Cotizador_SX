@@ -1,3 +1,6 @@
-2026/09/10-12:43:25.826 1940 Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Local Storage\leveldb/MANIFEST-000001
-2026/09/10-12:43:25.834 1940 Recovering log #3
-2026/09/10-12:43:25.837 1940 Reusing old log D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Local Storage\leveldb/000003.log 
+2026/09/10-21:00:11.190 2e50 Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Local Storage\leveldb/MANIFEST-000001
+2026/09/10-21:00:11.203 2e50 Recovering log #3
+2026/09/10-21:00:11.210 2e50 Reusing old log D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\Local Storage\leveldb/000003.log 
+2026/09/10-21:01:11.231 4b54 Level-0 table #5: started
+2026/09/10-21:01:11.245 4b54 Level-0 table #5: 20219 bytes OK
+2026/09/10-21:01:11.251 4b54 Delete type=0 #3

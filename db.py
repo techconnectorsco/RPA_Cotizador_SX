@@ -211,6 +211,63 @@ def guardar_items(solicitud_id: str, productos_solicitados: list[dict]) -> list[
     return ids
 
 
+def obtener_item(item_id: str) -> dict | None:
+    """
+    Obtiene un solicitud_item por su UUID.
+    Usado por el modo reintento para conocer la solicitud padre y datos originales.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM solicitud_items WHERE id = %s",
+            (item_id,),
+        ).fetchone()
+    return row
+
+
+def siguiente_intento_numero(item_id: str) -> int:
+    """
+    Calcula qué número de intento le toca al próximo reintento de este item.
+
+    Regla: MAX(intento_numero) existente en scraper_ejecuciones + 1.
+    Si el item nunca corrió scrapers, devuelve 1.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(MAX(intento_numero), 0) + 1 AS siguiente
+            FROM scraper_ejecuciones
+            WHERE solicitud_item_id = %s
+            """,
+            (item_id,),
+        ).fetchone()
+    return int(row["siguiente"])
+
+
+def actualizar_intento_actual(item_id: str, intento_numero: int) -> None:
+    """
+    Marca qué intento es el "vigente" del item.
+    El frontend usa este valor para saber cuál colapsable abrir por defecto
+    y qué badge "actual" mostrar.
+    """
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE solicitud_items SET intento_actual = %s WHERE id = %s",
+            (intento_numero, item_id),
+        )
+
+
+def guardar_texto_reinterpretacion(item_id: str, texto: str) -> None:
+    """
+    Guarda el texto libre que el vendedor escribió en el último reintento.
+    (Solo se conserva el ÚLTIMO — decisión de proyecto: no crear tabla histórica.)
+    """
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE solicitud_items SET texto_reinterpretacion = %s WHERE id = %s",
+            (texto, item_id),
+        )
+
+
 # =====================================================================
 # EJECUCIONES DE SCRAPER
 # =====================================================================
@@ -222,18 +279,23 @@ def guardar_ejecucion_scraper(
     duracion_ms: int,
     total_crudos: int,
     error_mensaje: str | None = None,
+    intento_numero: int = 1,
 ) -> str:
     """
     Guarda una ejecución de scraper.
     Devuelve el ID de la ejecución (necesario para guardar los productos).
+
+    `intento_numero` marca a qué intento pertenece esta ejecución.
+    Default = 1 mantiene compatibilidad con las llamadas actuales (crear solicitud).
+    Los reintentos pasan el número calculado por siguiente_intento_numero().
     """
     with get_conn() as conn:
         row = conn.execute(
             """
             INSERT INTO scraper_ejecuciones (
                 solicitud_item_id, proveedor_codigo, query_usada,
-                exitoso, duracion_ms, total_crudos, error_mensaje
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                exitoso, duracion_ms, total_crudos, error_mensaje, intento_numero
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -244,6 +306,7 @@ def guardar_ejecucion_scraper(
                 duracion_ms,
                 total_crudos,
                 error_mensaje,
+                intento_numero,
             ),
         ).fetchone()
     return str(row["id"])
@@ -266,10 +329,14 @@ def guardar_productos_encontrados(
     scraper_ejecucion_id: str,
     productos_con_match: list[dict],
     tiers_a_guardar: tuple[str, ...] = ("exacto", "bueno", "similar"),
+    intento_numero: int = 1,
 ) -> int:
     """
     Guarda los productos que pasaron el filtro de tier.
     Por defecto: exacto, bueno, similar. Los 'dudoso' se descartan.
+
+    `intento_numero` marca a qué intento pertenece cada producto.
+    Default = 1 mantiene compatibilidad con el flujo original.
 
     Cada producto es un dict que combina el producto original + el match.
     Estructura esperada:
@@ -315,6 +382,7 @@ def guardar_productos_encontrados(
                     match_score, match_score_texto, match_score_marca, match_score_specs,
                     match_ajuste_variantes, match_bonus_identidad, match_bonus_contenida,
                     match_tier, match_etiquetas,
+                    intento_numero,
                     scrapeado_en
                 ) VALUES (
                     %s, %s, %s,
@@ -327,6 +395,7 @@ def guardar_productos_encontrados(
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
+                    %s,
                     %s
                 )
                 """,
@@ -360,6 +429,7 @@ def guardar_productos_encontrados(
                     match.get("bonus_contenida", 0),
                     tier,
                     match.get("etiquetas_variante") or [],
+                    intento_numero,
                     p.get("scrapeado_en"),
                 ),
             )

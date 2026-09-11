@@ -1,2 +1,3 @@
-2026/09/10-12:05:27.675 6e8 Creating DB D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\shared_proto_db since it was missing.
-2026/09/10-12:05:27.738 6e8 Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\shared_proto_db/MANIFEST-000001
+2026/09/10-20:49:55.275 2d40 Reusing MANIFEST D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\shared_proto_db/MANIFEST-000001
+2026/09/10-20:49:55.276 2d40 Recovering log #3
+2026/09/10-20:49:55.279 2d40 Reusing old log D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\patchright_userdata\amazon\Default\shared_proto_db/000003.log 
