@@ -60,9 +60,9 @@ from modelo import ProductoSolicitado, ResultadoScraper
 # Que se ejecuten o no lo decide la DB (proveedores.activo)
 # ---------------------------------------------------------------------
 SCRAPERS_DISPONIBLES = {
-    "intelec": IntelecScraper,
-    "amazon": AmazonScraper,
-    # "eurocomp": EurocompScraper,  # pendiente credenciales
+    # "intelec": IntelecScraper,
+    # "amazon": AmazonScraper,
+    "eurocomp": EurocompScraper,  # pendiente credenciales
     # "intcomex": IntcomexScraper,  # pendiente credenciales
     # "cdc":      CDCScraper,       # pendiente aprobacion
 }
