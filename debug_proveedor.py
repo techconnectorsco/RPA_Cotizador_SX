@@ -73,11 +73,17 @@ def buscar_por_form(page: Page, cfg: dict, query: str) -> None:
     page.fill(cfg["input_selector"], query)
 
     print(f"→ Haciendo click en {cfg['submit_selector']}")
-    # Esperamos a que la navegacion suceda al hacer click
-    with page.expect_navigation(wait_until="domcontentloaded", timeout=30000):
-        page.click(cfg["submit_selector"])
+    page.click(cfg["submit_selector"])
 
-    print(f"→ URL de resultados: {page.url}")
+    # Eurocomp reemplaza el catálogo dentro de #main_div por AJAX; no cambia
+    # de URL, por lo que esperar una navegación siempre terminaba en timeout.
+    page.wait_for_function(
+        """() => /Encontrados\\s+\\d+\\s+artículos\\./i.test(
+            document.querySelector('#main_div')?.innerText || ''
+        )""",
+        timeout=config.scraper_timeout_ms,
+    )
+    print(f"→ Resultados cargados en: {page.url}")
 
 
 def buscar_por_url(page: Page, cfg: dict, query: str) -> None:
