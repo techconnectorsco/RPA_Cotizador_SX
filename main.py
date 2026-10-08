@@ -52,6 +52,7 @@ from config import config
 from ia import interpretar_solicitud
 from intelec import IntelecScraper
 from amazon import AmazonScraper
+from compunomicos import CompunomicosScraper
 from eurocomp import EurocompScraper
 from matcher import Matcher
 from modelo import ProductoSolicitado, ResultadoScraper
@@ -63,6 +64,7 @@ from modelo import ProductoSolicitado, ResultadoScraper
 SCRAPERS_DISPONIBLES = {
     "intelec": IntelecScraper,
     "amazon": AmazonScraper,
+    "compunomicos": CompunomicosScraper,
     "eurocomp": EurocompScraper,
     # "intcomex": IntcomexScraper,  # pendiente credenciales
     # "cdc":      CDCScraper,       # pendiente aprobacion
