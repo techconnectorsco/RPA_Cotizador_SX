@@ -46,9 +46,24 @@ PROVEEDORES = {
         "url": "https://www.intelec.co.cr/?s={query}&post_type=product",
     },
     "intcomex": {
-        # URL real de resultados (la anterior daba 404)
         "tipo": "url",
-        "url": "https://store.intcomex.com/Products/ByKeyword?term={query}&typeSearch=&r=true",
+        "url": "https://myservices.intcomex.com/es/XCR/store/search/?by=term&value={query}",
+    },
+    "dataformas": {
+        "tipo": "url",
+        "url": "https://dataformas.com/search?q={query}",
+    },
+    "cococo": {
+        "tipo": "url",
+        "url": "https://cococo.co.cr/shop?search={query}",
+    },
+    "bpc": {
+        "tipo": "url",
+        "url": "https://www.mayoristabpc.com/busqueda?s={query}",
+    },
+    "compunomicos": {
+        "tipo": "url",
+        "url": "https://compunomicos.com/?s={query}&post_type=product",
     },
     "amazon": {
         "tipo": "url",
