@@ -47,6 +47,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from dataformas import DataformasScraper
 import db
 from config import config
 from ia import interpretar_solicitud
@@ -54,7 +55,9 @@ from intelec import IntelecScraper
 from amazon import AmazonScraper
 from bpc import BPCScraper
 from compunomicos import CompunomicosScraper
+from cococo import CococoScraper
 from eurocomp import EurocompScraper
+from intcomex import IntcomexScraper
 from matcher import Matcher
 from modelo import ProductoSolicitado, ResultadoScraper
 
@@ -64,11 +67,13 @@ from modelo import ProductoSolicitado, ResultadoScraper
 # ---------------------------------------------------------------------
 SCRAPERS_DISPONIBLES = {
     "intelec": IntelecScraper,
-    "amazon": AmazonScraper,
-    "bpc": BPCScraper,
-    "compunomicos": CompunomicosScraper,
-    "eurocomp": EurocompScraper,
-    # "intcomex": IntcomexScraper,  # pendiente credenciales
+    #"amazon": AmazonScraper,
+    #"bpc": BPCScraper,
+    #"compunomicos": CompunomicosScraper,
+    #"eurocomp": EurocompScraper,
+    "intcomex": IntcomexScraper, 
+    "cococo": CococoScraper,
+    "dataformas": DataformasScraper,
     # "cdc":      CDCScraper,       # pendiente aprobacion
 }
 
