@@ -58,6 +58,7 @@ from compunomicos import CompunomicosScraper
 from cococo import CococoScraper
 from eurocomp import EurocompScraper
 from intcomex import IntcomexScraper
+from cdc import CDCScraper
 from matcher import Matcher
 from modelo import ProductoSolicitado, ResultadoScraper
 
@@ -66,15 +67,15 @@ from modelo import ProductoSolicitado, ResultadoScraper
 # Que se ejecuten o no lo decide la DB (proveedores.activo)
 # ---------------------------------------------------------------------
 SCRAPERS_DISPONIBLES = {
-    "intelec": IntelecScraper,
+    #"intelec": IntelecScraper,
     #"amazon": AmazonScraper,
     #"bpc": BPCScraper,
     #"compunomicos": CompunomicosScraper,
     #"eurocomp": EurocompScraper,
-    "intcomex": IntcomexScraper, 
-    "cococo": CococoScraper,
-    "dataformas": DataformasScraper,
-    # "cdc":      CDCScraper,       # pendiente aprobacion
+    #"intcomex": IntcomexScraper, 
+    #"cococo": CococoScraper,
+    #"dataformas": DataformasScraper,
+    "cdc":      CDCScraper,       
 }
 
 
