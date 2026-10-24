@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 from urllib.parse import quote_plus
 
@@ -25,6 +26,8 @@ class EurocompScraper(ScraperBase):
     SEL_SEARCH_INPUT = "#ed"
     SEL_SEARCH_SUBMIT = "#catalogo_submit"
     SEL_CARD = "article.itemex-plus-card"
+    PAUSA_MIN_MS = 800
+    PAUSA_MAX_MS = 1600
 
     def __init__(self, browser) -> None:
         super().__init__(browser)
@@ -59,6 +62,7 @@ class EurocompScraper(ScraperBase):
 
         page.fill(self.SEL_LOGIN_USER, usuario)
         page.fill(self.SEL_LOGIN_PASSWORD, password)
+        self._esperar_antes_de_enviar()
         page.locator(self.SEL_LOGIN_SUBMIT).click()
 
         # El login se completa por AJAX: esperamos que el menú deje de identificar
@@ -84,6 +88,7 @@ class EurocompScraper(ScraperBase):
 
         print(f"  [eurocomp] Buscando: {texto}")
         page.fill(self.SEL_SEARCH_INPUT, texto)
+        self._esperar_antes_de_enviar()
         page.locator(self.SEL_SEARCH_SUBMIT).click()
         # El catálogo reemplaza #main_div por AJAX. También esperamos el contador
         # para que una búsqueda sin coincidencias sea un resultado exitoso vacío.
@@ -107,6 +112,12 @@ class EurocompScraper(ScraperBase):
                 print(f"  [eurocomp] Error en card {indice}: {error}")
 
         return productos
+
+    def _esperar_antes_de_enviar(self) -> None:
+        """Introduce una pausa breve y variable antes de una acción remota."""
+        page = self._page
+        assert page is not None
+        page.wait_for_timeout(random.randint(self.PAUSA_MIN_MS, self.PAUSA_MAX_MS))
 
     def _parsear_card(self, card) -> ProductoEncontrado | None:
         nombre_el = card.locator(".itemex-plus-title").first
