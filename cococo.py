@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 from urllib.parse import urlencode
 
@@ -34,6 +35,18 @@ class CococoScraper(ScraperBase):
         self._login_error: Exception | None = None
         self._autenticado = False
 
+    def _esperar_antes_de_enviar_login(self) -> None:
+        # Aquí se maneja el delay después de llenar las credenciales y antes de enviarlas.
+        demora_ms = random.randint(800, 1600)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
+    def _esperar_catalogo_cargado(self) -> None:
+        # Aquí se maneja el delay después de cargar el catálogo y antes de extraer tarjetas.
+        demora_ms = random.randint(1500, 3000)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
     def _login(self) -> None:
         """Inicia sesión en la tienda usando credenciales del entorno."""
         usuario = os.getenv("COCOCO_USER", "").strip()
@@ -55,6 +68,7 @@ class CococoScraper(ScraperBase):
             )
             page.locator("input[type='email']").fill(usuario)
             page.locator("input[type='password']").fill(password)
+            self._esperar_antes_de_enviar_login()
             page.get_by_role("button", name="Iniciar sesión").click(
                 timeout=config.scraper_timeout_ms
             )
@@ -120,8 +134,7 @@ class CococoScraper(ScraperBase):
         campo.wait_for(state="visible", timeout=config.scraper_timeout_ms)
         campo.fill(texto)
         page.evaluate(
-            "() => { window.__cococoCardsSnapshot = null; "
-            "window.__cococoZeroSince = null; }"
+            "() => { window.__cococoZeroSince = null; }"
         )
         page.locator(".search-box_button button").click(
             timeout=config.scraper_timeout_ms
@@ -144,22 +157,7 @@ class CococoScraper(ScraperBase):
                     const conteoCoincide = match && termino.includes(normalizar(query));
                     const cards = Array.from(document.querySelectorAll(cardSelector))
                         .filter(card => card.getClientRects().length > 0);
-                    const capturar = () => cards.map(card => {
-                        const texto = selector => card.querySelector(selector)?.innerText?.trim() || '';
-                        const imagen = card.querySelector('.image-wrapper img');
-                        const badges = card.querySelector('.card-product-badges');
-                        return {
-                            nombre: texto('h3.product-name, .label-name-product'),
-                            href: card.querySelector('a.product-link')?.getAttribute('href') || '',
-                            precio: texto('p.product-price'),
-                            imagen: imagen?.currentSrc || imagen?.getAttribute('src') || imagen?.getAttribute('data-src') || '',
-                            etiquetas: badges?.innerText?.split('\\n').map(x => x.trim()).filter(Boolean) || [],
-                            texto: card.innerText || ''
-                        };
-                    }).filter(item => item.nombre && item.href);
-
                     if (cards.length && (conteoCoincide || location.pathname.replace(/\\/$/, '').endsWith('/shop'))) {
-                        window.__cococoCardsSnapshot = capturar();
                         return true;
                     }
                     if (conteoCoincide && Number(match[1]) === 0 && !cards.length) {
@@ -182,8 +180,23 @@ class CococoScraper(ScraperBase):
                 ) from error
             raise
 
+        self._esperar_catalogo_cargado()
         cards_actuales = page.evaluate(
-            "() => window.__cococoCardsSnapshot || []"
+            """() => Array.from(document.querySelectorAll('.card-product'))
+                .filter(card => card.getClientRects().length > 0)
+                .map(card => {
+                    const texto = selector => card.querySelector(selector)?.innerText?.trim() || '';
+                    const imagen = card.querySelector('.image-wrapper img');
+                    const badges = card.querySelector('.card-product-badges');
+                    return {
+                        nombre: texto('h3.product-name, .label-name-product'),
+                        href: card.querySelector('a.product-link')?.getAttribute('href') || '',
+                        precio: texto('p.product-price'),
+                        imagen: imagen?.currentSrc || imagen?.getAttribute('src') || imagen?.getAttribute('data-src') || '',
+                        etiquetas: badges?.innerText?.split('\\n').map(x => x.trim()).filter(Boolean) || [],
+                        texto: card.innerText || ''
+                    };
+                }).filter(item => item.nombre && item.href)"""
         )
         if not cards_actuales:
             body_text = page.locator("body").inner_text()
@@ -260,20 +273,7 @@ class CococoScraper(ScraperBase):
                             .filter(card => card.getClientRects().length > 0);
                         if (active?.getAttribute('aria-current') !== String(pageNumber)
                             || firstHref === previousHref || !cards.length) return false;
-                        window.__cococoCardsSnapshot = cards.map(card => {
-                            const texto = selector => card.querySelector(selector)?.innerText?.trim() || '';
-                            const imagen = card.querySelector('.image-wrapper img');
-                            const badges = card.querySelector('.card-product-badges');
-                            return {
-                                nombre: texto('h3.product-name, .label-name-product'),
-                                href: card.querySelector('a.product-link')?.getAttribute('href') || '',
-                                precio: texto('p.product-price'),
-                                imagen: imagen?.currentSrc || imagen?.getAttribute('src') || imagen?.getAttribute('data-src') || '',
-                                etiquetas: badges?.innerText?.split('\\n').map(x => x.trim()).filter(Boolean) || [],
-                                texto: card.innerText || ''
-                            };
-                        }).filter(item => item.nombre && item.href);
-                        return window.__cococoCardsSnapshot.length > 0;
+                        return true;
                     }""",
                     arg={
                         "previousHref": href_actual,
@@ -289,8 +289,23 @@ class CococoScraper(ScraperBase):
                     "productos ya leídos."
                 )
                 break
+            self._esperar_catalogo_cargado()
             cards_actuales = page.evaluate(
-                "() => window.__cococoCardsSnapshot || []"
+                """() => Array.from(document.querySelectorAll('.card-product'))
+                    .filter(card => card.getClientRects().length > 0)
+                    .map(card => {
+                        const texto = selector => card.querySelector(selector)?.innerText?.trim() || '';
+                        const imagen = card.querySelector('.image-wrapper img');
+                        const badges = card.querySelector('.card-product-badges');
+                        return {
+                            nombre: texto('h3.product-name, .label-name-product'),
+                            href: card.querySelector('a.product-link')?.getAttribute('href') || '',
+                            precio: texto('p.product-price'),
+                            imagen: imagen?.currentSrc || imagen?.getAttribute('src') || imagen?.getAttribute('data-src') || '',
+                            etiquetas: badges?.innerText?.split('\\n').map(x => x.trim()).filter(Boolean) || [],
+                            texto: card.innerText || ''
+                        };
+                    }).filter(item => item.nombre && item.href)"""
             )
             numero_pagina = siguiente_pagina
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 from urllib.parse import quote_plus
 
@@ -39,6 +40,18 @@ class IntcomexScraper(ScraperBase):
         self._login_error: Exception | None = None
         self._autenticado = False
         self._aviso_login_catalogo = False
+
+    def _esperar_antes_de_enviar_login(self) -> None:
+        # Aquí se maneja el delay después de llenar las credenciales y antes de enviarlas.
+        demora_ms = random.randint(800, 1600)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
+    def _esperar_catalogo_cargado(self) -> None:
+        # Aquí se maneja el delay después de cargar el catálogo y antes de extraer tarjetas.
+        demora_ms = random.randint(1500, 3000)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
 
     def _login(self) -> None:
         """Inicia sesión solo si se configuraron credenciales en el entorno.
@@ -77,6 +90,7 @@ class IntcomexScraper(ScraperBase):
             page.wait_for_selector("#email", timeout=config.scraper_timeout_ms)
             page.fill("#email", usuario)
             page.fill("#password", password)
+            self._esperar_antes_de_enviar_login()
             page.click("#next", timeout=config.scraper_timeout_ms)
 
             # Azure AD B2C devuelve al portal cuando finaliza la autenticación.
@@ -156,6 +170,7 @@ class IntcomexScraper(ScraperBase):
                 ) from error
             raise
 
+        self._esperar_catalogo_cargado()
         max_resultados = max(0, config.scraper_max_resultados)
         productos: list[ProductoEncontrado] = []
         paginas_vistas = 0
@@ -222,6 +237,8 @@ class IntcomexScraper(ScraperBase):
                 )
             except Exception:
                 break
+            if len(productos) < max_resultados:
+                self._esperar_catalogo_cargado()
 
         return productos
 

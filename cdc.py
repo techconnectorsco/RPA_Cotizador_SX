@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
@@ -34,6 +35,18 @@ class CDCScraper(ScraperBase):
         self._login_error: Exception | None = None
         self._autenticado: bool = False
 
+    def _esperar_antes_de_enviar_login(self) -> None:
+        # Aquí se maneja el delay después de llenar las credenciales y antes de enviarlas.
+        demora_ms = random.randint(800, 1600)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
+    def _esperar_catalogo_cargado(self) -> None:
+        # Aquí se maneja el delay después de cargar el catálogo y antes de extraer tarjetas.
+        demora_ms = random.randint(1500, 3000)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
     def _login(self) -> None:
         """Autentica contra CDC si las credenciales están configuradas en .env."""
         usuario = os.getenv("CDC_USER", "").strip()
@@ -63,6 +76,7 @@ class CDCScraper(ScraperBase):
 
         page.fill(self.SEL_LOGIN_USER, usuario)
         page.fill(self.SEL_LOGIN_PASSWORD, password)
+        self._esperar_antes_de_enviar_login()
         page.locator(self.SEL_LOGIN_SUBMIT).click()
 
         # Esperar que la barra de navegación confirme el usuario autenticado
@@ -100,6 +114,7 @@ class CDCScraper(ScraperBase):
             timeout=config.scraper_timeout_ms,
         )
 
+        self._esperar_catalogo_cargado()
         cards = page.locator(self.SEL_CARD).all()
         total_a_procesar = min(len(cards), config.scraper_max_resultados)
         print(f"  [cdc] Listado obtenido ({len(cards)} artículos). Extrayendo detalle de {total_a_procesar} productos...")

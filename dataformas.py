@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 from urllib.parse import quote_plus
 
@@ -32,6 +33,18 @@ class DataformasScraper(ScraperBase):
         self._login_error: Exception | None = None
         self._autenticado = False
 
+    def _esperar_antes_de_enviar_login(self) -> None:
+        # Aquí se maneja el delay después de llenar las credenciales y antes de enviarlas.
+        demora_ms = random.randint(800, 1600)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
+    def _esperar_catalogo_cargado(self) -> None:
+        # Aquí se maneja el delay después de cargar el catálogo y antes de extraer tarjetas.
+        demora_ms = random.randint(1500, 3000)
+        assert self._page is not None
+        self._page.wait_for_timeout(demora_ms)
+
     def _login(self) -> None:
         """Inicia sesión usando credenciales del entorno (.env)."""
         usuario = (os.getenv("DATAFORMAS_USER") or "").strip()
@@ -58,6 +71,7 @@ class DataformasScraper(ScraperBase):
             page.wait_for_selector(self.SEL_LOGIN_USER, timeout=config.scraper_timeout_ms)
             page.locator(self.SEL_LOGIN_USER).first.fill(usuario)
             page.locator(self.SEL_LOGIN_PASSWORD).first.fill(password)
+            self._esperar_antes_de_enviar_login()
             page.locator(self.SEL_LOGIN_SUBMIT).first.click(
                 timeout=config.scraper_timeout_ms
             )
@@ -67,7 +81,6 @@ class DataformasScraper(ScraperBase):
                 "() => !location.pathname.includes('/profile/login')",
                 timeout=config.scraper_timeout_ms,
             )
-            page.wait_for_timeout(2000)
             self._autenticado = True
             print("  [dataformas] Sesión iniciada correctamente")
         except Exception as error:
@@ -152,10 +165,9 @@ class DataformasScraper(ScraperBase):
                 card.scroll_into_view_if_needed(timeout=800)
             except Exception:
                 pass
-        page.wait_for_timeout(1000)
-
         # Re-obtener las tarjetas tras el scroll para asegurar el estado hidratado
         cards = page.locator(self.SEL_CARD).all()
+        self._esperar_catalogo_cargado()
 
         productos: list[ProductoEncontrado] = []
         vistos: set[str] = set()
