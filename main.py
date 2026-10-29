@@ -67,12 +67,12 @@ from modelo import ProductoSolicitado, ResultadoScraper
 # Que se ejecuten o no lo decide la DB (proveedores.activo)
 # ---------------------------------------------------------------------
 SCRAPERS_DISPONIBLES = {
-    "intelec": IntelecScraper,  # revisar mejor porque salio verificacion de no ser robot de cloudflare
+    # "intelec": IntelecScraper,  # revisar mejor porque salio verificacion de no ser robot de cloudflare
     "amazon": AmazonScraper,
     "bpc": BPCScraper,
     "compunomicos": CompunomicosScraper,  # este creo que lo que vi iba producto a producto
     "eurocomp": EurocompScraper,
-    "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
+    # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
     "cococo": CococoScraper,  # pagina rara
     "dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,

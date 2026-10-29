@@ -1,0 +1,54 @@
+======================================================================
+INICIO RPA — 2026-10-29T12:09:48
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : --agregar-busqueda eb9e31df-a833-4e9b-a0ca-7af8a6b1947d --texto laptop
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\rpa_20261029_120948.log
+======================================================================
+Modo: agregar búsqueda a la solicitud eb9e31df-a833-4e9b-a0ca-7af8a6b1947d
+
+======================================================================
+AGREGANDO BÚSQUEDA A SOLICITUD: eb9e31df-a833-4e9b-a0ca-7af8a6b1947d
+TEXTO NUEVO: laptop
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    intento 1/3 fallido, esperando 2s...
+    intento 2/3 fallido, esperando 4s...
+  ⚠ Modelo gemini-3.6-flash con error de servidor: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+  → Intentando modelo 2/3: gemini-3.5-flash-lite
+  ✓ Se agregarán 1 renglón(es):
+    1. [laptop]    — query: 'laptop' (x1)
+
+[2/3] Corriendo scrapers para los renglones nuevos...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item 7f610e9f-22c4-49b6-94d9-2abf85b4749e  (intento #1)  query: 'laptop'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 7 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+  ✓ 19 productos (9777 ms)
+
+▶ cococo
+  [cococo] Sesión iniciada correctamente
+  [cococo] Buscando: laptop
+  ✗ Fallo (33192 ms): TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".search-bo
+  [eurocomp] Buscando: laptop
+  [eurocomp] Procesando 20 productos
+  ✓ 22 productos (78332 ms)
+    [bpc] 19 crudos → guardados 19 (exacto:0 bueno:0 similar:0 dudoso:19)
+    [cdc] 20 crudos → guardados 20 (exacto:0 bueno:0 similar:0 dudoso:20)
+    [compunomicos] 20 crudos → guardados 19 (exacto:0 bueno:19 similar:0 dudoso:0)
+    [eurocomp] 20 crudos → guardados 16 (exacto:0 bueno:16 similar:0 dudoso:0)
+    [amazon] 22 crudos → guardados 21 (exacto:0 bueno:4 similar:2 dudoso:15)
+
+======================================================================
+BÚSQUEDA AGREGADA — 1 renglón(es) nuevo(s)
+======================================================================
