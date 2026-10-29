@@ -90,9 +90,9 @@ class AmazonScraper(ScraperBase):
         page.goto(url, wait_until="domcontentloaded", timeout=config.scraper_timeout_ms)
 
         try:
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_load_state("networkidle", timeout=6000)
         except Exception:
-            print("  [amazon] networkidle no llego en 15s, continuamos")
+            print("  [amazon] networkidle no llegó en 6s, continuamos")
 
         html_actual = page.content()
 
@@ -288,16 +288,16 @@ class AmazonScraper(ScraperBase):
             page.evaluate("""
                 async () => {
                     let y = 0;
-                    const step = 500;
+                    const step = 1200;   // saltos más grandes (antes 500)
                     while (y < document.body.scrollHeight) {
                         window.scrollTo(0, y);
-                        await new Promise(r => setTimeout(r, 150));
+                        await new Promise(r => setTimeout(r, 60));  // pausa más corta (antes 150)
                         y += step;
                     }
                     window.scrollTo(0, 0);
                 }
             """)
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(200)  # antes 500
         except Exception:
             pass
 

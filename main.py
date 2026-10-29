@@ -79,7 +79,9 @@ SCRAPERS_DISPONIBLES = {
 }
 
 
-def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoScraper]:
+def ejecutar_scrapers_OLD(
+    query: str, codigos_activos: list[str]
+) -> list[ResultadoScraper]:
     """Corre los scrapers indicados con la query dada.
 
     Cada proveedor está TOTALMENTE aislado: si uno falla al abrir el navegador,
@@ -130,7 +132,52 @@ def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoS
     return resultados
 
 
-def _correr_un_scraper(codigo, ScraperCls, query, browser) -> ResultadoScraper:
+def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoScraper]:
+    """Corre los scrapers EN PARALELO, en tandas de hasta MAX_PARALELO a la vez.
+
+    Cada scraper abre su PROPIO navegador dentro de su PROPIO hilo. Nada se
+    comparte entre ellos, así que un scraper no interfiere con otro ni con el
+    aislamiento de errores. Con 8 activos y MAX_PARALELO=3, corren 3+3+2.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    MAX_PARALELO = 3  # cuántos navegadores a la vez (subir si el VPS aguanta)
+
+    resultados: list[ResultadoScraper] = []
+
+    a_correr = [
+        (c, SCRAPERS_DISPONIBLES[c])
+        for c in codigos_activos
+        if c in SCRAPERS_DISPONIBLES
+    ]
+
+    if not a_correr:
+        print("  ⚠ Sin scrapers implementados activos")
+        return resultados
+
+    # Avisar qué proveedores activos NO tienen scraper implementado
+    sin_implementar = [c for c in codigos_activos if c not in SCRAPERS_DISPONIBLES]
+    if sin_implementar:
+        print(
+            f"  ⚠ Activos en DB pero sin scraper implementado (se omiten): {sin_implementar}"
+        )
+
+    print(
+        f"  Corriendo {len(a_correr)} scrapers en paralelo (máx {MAX_PARALELO} a la vez)..."
+    )
+
+    with ThreadPoolExecutor(max_workers=MAX_PARALELO) as pool:
+        futuros = {
+            pool.submit(_correr_un_scraper, codigo, ScraperCls, query): codigo
+            for codigo, ScraperCls in a_correr
+        }
+        for futuro in as_completed(futuros):
+            resultados.append(futuro.result())
+
+    return resultados
+
+
+def _correr_un_scraper_OLD(codigo, ScraperCls, query, browser) -> ResultadoScraper:
     """
     Corre UN scraper de punta a punta con aislamiento total.
 
@@ -164,6 +211,82 @@ def _correr_un_scraper(codigo, ScraperCls, query, browser) -> ResultadoScraper:
         )
 
 
+def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
+    """
+    Corre UN scraper de punta a punta, con su PROPIO navegador, aislado.
+
+    Abre su propio sync_playwright (cada hilo el suyo — Playwright sync no se
+    puede compartir entre hilos). Cualquier fallo (abrir navegador, login,
+    buscar, cerrar) se convierte en un ResultadoScraper fallido; nunca se
+    propaga ni tumba a los demás.
+
+    Para que el log sea legible pese al paralelismo, este scraper acumula sus
+    mensajes y los imprime todos juntos al final, en un bloque.
+    """
+    import io
+    import time
+    import traceback
+    from contextlib import redirect_stdout
+
+    inicio = time.perf_counter()
+    buffer = io.StringIO()
+
+    try:
+        with redirect_stdout(buffer):
+            # Patchright (amazon) ignora el browser que reciba; los demás
+            # abren su propio Chromium aquí. Cada hilo, su propio Playwright.
+            if ScraperCls.usa_browser_compartido:
+                with sync_playwright() as pw:
+                    browser = pw.chromium.launch(
+                        headless=config.scraper_headless,
+                        slow_mo=100 if not config.scraper_headless else 0,
+                    )
+                    try:
+                        with ScraperCls(browser) as scraper:
+                            resultado = scraper.ejecutar(query)
+                    finally:
+                        browser.close()
+            else:
+                # Autónomo (amazon/patchright): se provisiona su propio browser
+                with ScraperCls(browser=None) as scraper:
+                    resultado = scraper.ejecutar(query)
+
+        _log_resultado_en(buffer, resultado)
+
+    except Exception as e:
+        duracion = int((time.perf_counter() - inicio) * 1000)
+        error_full = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        print(buffer.getvalue(), end="")
+        print(f"\n▶ {codigo}")
+        print(f"  ✗ [{codigo}] Falló al iniciar/cerrar ({duracion} ms): {e}")
+        return ResultadoScraper(
+            proveedor=codigo,
+            query=query,
+            exitoso=False,
+            productos=[],
+            duracion_ms=duracion,
+            error=error_full,
+        )
+
+    # Imprimir el bloque completo de este scraper, junto, al terminar
+    print(f"\n▶ {codigo}")
+    print(buffer.getvalue(), end="")
+    return resultado
+
+
+def _log_resultado_en(buffer, resultado: ResultadoScraper) -> None:
+    """Como _log_resultado pero escribe en un buffer (para logs en paralelo)."""
+    if resultado.exitoso:
+        print(
+            f"  ✓ {len(resultado.productos)} productos ({resultado.duracion_ms} ms)",
+            file=buffer,
+        )
+    else:
+        err = resultado.error[:100] if resultado.error else ""
+        print(f"  ✗ Fallo ({resultado.duracion_ms} ms): {err}", file=buffer)
+
+
+##ojo esta quedo para las _old por si acaso
 def _log_resultado(resultado: ResultadoScraper) -> None:
     if resultado.exitoso:
         print(

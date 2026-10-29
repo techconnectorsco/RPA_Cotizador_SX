@@ -49,13 +49,13 @@ class IntelecScraper(ScraperBase):
 
         # Esperar que la red se calme (WooCommerce trae varios recursos async)
         try:
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_load_state("networkidle", timeout=8000)
         except Exception:
-            print("  [intelec] networkidle no llego en 15s, continuamos")
+            print("  [intelec] networkidle no llegó en 8s, continuamos")
 
         # Esperar a que aparezcan los productos
         try:
-            page.wait_for_selector(self.SEL_CARD, timeout=8000)
+            page.wait_for_selector(self.SEL_CARD, timeout=5000)
         except Exception:
             print("  [intelec] No aparecieron productos. Guardando HTML de debug...")
             self._guardar_debug(page, query)

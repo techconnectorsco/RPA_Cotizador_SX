@@ -26,6 +26,7 @@ class Config:
     # Scraper
     scraper_headless: bool = os.getenv("SCRAPER_HEADLESS", "false").lower() == "true"
     scraper_timeout_ms: int = int(os.getenv("SCRAPER_TIMEOUT_MS", "30000"))
+    scraper_login_timeout_ms: int = int(os.getenv("SCRAPER_LOGIN_TIMEOUT_MS", "12000"))
     scraper_max_resultados: int = int(os.getenv("SCRAPER_MAX_RESULTADOS", "20"))
 
 

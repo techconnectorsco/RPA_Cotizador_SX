@@ -68,7 +68,9 @@ class DataformasScraper(ScraperBase):
                 wait_until="networkidle",
                 timeout=config.scraper_timeout_ms,
             )
-            page.wait_for_selector(self.SEL_LOGIN_USER, timeout=config.scraper_timeout_ms)
+            page.wait_for_selector(
+                self.SEL_LOGIN_USER, timeout=config.scraper_timeout_ms
+            )
             page.locator(self.SEL_LOGIN_USER).first.fill(usuario)
             page.locator(self.SEL_LOGIN_PASSWORD).first.fill(password)
             self._esperar_antes_de_enviar_login()
@@ -77,9 +79,10 @@ class DataformasScraper(ScraperBase):
             )
 
             # Esperar a que la navegación confirme la salida de /profile/login
+            # Esperar a que la navegación confirme la salida de /profile/login
             page.wait_for_function(
                 "() => !location.pathname.includes('/profile/login')",
-                timeout=config.scraper_timeout_ms,
+                timeout=config.scraper_login_timeout_ms,
             )
             self._autenticado = True
             print("  [dataformas] Sesión iniciada correctamente")
@@ -183,9 +186,7 @@ class DataformasScraper(ScraperBase):
             except Exception as error:
                 print(f"  [dataformas] Error en tarjeta {indice}: {error}")
 
-        precios_encontrados = sum(
-            producto.precio is not None for producto in productos
-        )
+        precios_encontrados = sum(producto.precio is not None for producto in productos)
 
         print(f"  [dataformas] Total productos procesados: {len(productos)}")
         print(
@@ -226,7 +227,9 @@ class DataformasScraper(ScraperBase):
         if not nombre or self._es_placeholder(nombre):
             img = card.locator("img").first
             if img.count():
-                alt = (img.get_attribute("alt") or img.get_attribute("title") or "").strip()
+                alt = (
+                    img.get_attribute("alt") or img.get_attribute("title") or ""
+                ).strip()
                 if alt and not self._es_placeholder(alt):
                     nombre = alt
 
@@ -264,13 +267,20 @@ class DataformasScraper(ScraperBase):
         # 5. Stock y disponibilidad
         stock_texto = self._extraer_stock(card)
         if not stock_texto:
-            self._esperar_elemento(card, "text=/existencia|stock|agotado/i", timeout_ms=800)
+            self._esperar_elemento(
+                card, "text=/existencia|stock|agotado/i", timeout_ms=800
+            )
             stock_texto = self._extraer_stock(card)
 
         disponible = self._interpretar_disponibilidad(stock_texto)
         if disponible is None:
             # Si hay botón de compra o caja de cantidad visible, el producto tiene stock
-            if card.locator("input[type='number'], button.Button_action, button:has-text('Agregar'), button:has-text('Comprar')").count() > 0:
+            if (
+                card.locator(
+                    "input[type='number'], button.Button_action, button:has-text('Agregar'), button:has-text('Comprar')"
+                ).count()
+                > 0
+            ):
                 disponible = True
                 stock_texto = stock_texto or "Disponible"
 
@@ -389,10 +399,7 @@ class DataformasScraper(ScraperBase):
     def _buscar_precio_en_texto(cls, texto: str) -> str | None:
         """Reconoce importes con miles separados por espacios, comas o puntos."""
         texto = cls._normalizar_texto(texto)
-        numero = (
-            r"(?:\d{1,3}(?:[\s.,]\d{3})+(?:[.,]\d{2})?"
-            r"|\d+(?:[.,]\d{2})?)"
-        )
+        numero = r"(?:\d{1,3}(?:[\s.,]\d{3})+(?:[.,]\d{2})?" r"|\d+(?:[.,]\d{2})?)"
         patron = re.compile(
             rf"(?:US\$|USD|CRC|₡|¢|\$)\s*{numero}"
             rf"(?:\s*(?:USD|CRC|colones))?"
@@ -405,7 +412,9 @@ class DataformasScraper(ScraperBase):
     @staticmethod
     def _normalizar_texto(texto: str) -> str:
         """Normaliza superíndices (⁰¹²...) y espacios no divisibles (\xa0)."""
-        return texto.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")).replace("\xa0", " ")
+        return texto.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")).replace(
+            "\xa0", " "
+        )
 
     @staticmethod
     def _selector_precio() -> str:
@@ -416,7 +425,7 @@ class DataformasScraper(ScraperBase):
             '[class*="currency"], [class*="Currency"], '
             '[class*="amount"], [class*="Amount"], '
             '[itemprop="price"], meta[itemprop="price"], '
-            '[data-price], [data-value]'
+            "[data-price], [data-value]"
         )
 
     @classmethod
@@ -481,12 +490,42 @@ class DataformasScraper(ScraperBase):
     def _extraer_marca(nombre: str) -> str | None:
         """Detecta marcas comunes dentro del nombre del producto."""
         marcas = (
-            "LOGITECH", "MICROSOFT", "HYPERX", "KINGSTON", "SAMSUNG",
-            "LENOVO", "ASUS", "ACER", "APPLE", "XIAOMI", "HUAWEI",
-            "TOSHIBA", "PHILIPS", "VIEWSONIC", "AOC", "DELL", "HP",
-            "AMD", "INTEL", "NVIDIA", "RAZER", "CANON", "EPSON",
-            "BROTHER", "JBL", "SONY", "LG", "MSI", "TP-LINK", "UGREEN",
-            "TRUST", "TARGUS", "GENIUS", "KLIPX", "FORZA", "NEXXT",
+            "LOGITECH",
+            "MICROSOFT",
+            "HYPERX",
+            "KINGSTON",
+            "SAMSUNG",
+            "LENOVO",
+            "ASUS",
+            "ACER",
+            "APPLE",
+            "XIAOMI",
+            "HUAWEI",
+            "TOSHIBA",
+            "PHILIPS",
+            "VIEWSONIC",
+            "AOC",
+            "DELL",
+            "HP",
+            "AMD",
+            "INTEL",
+            "NVIDIA",
+            "RAZER",
+            "CANON",
+            "EPSON",
+            "BROTHER",
+            "JBL",
+            "SONY",
+            "LG",
+            "MSI",
+            "TP-LINK",
+            "UGREEN",
+            "TRUST",
+            "TARGUS",
+            "GENIUS",
+            "KLIPX",
+            "FORZA",
+            "NEXXT",
         )
         titulo = nombre.upper()
         for marca in marcas:
@@ -498,7 +537,10 @@ class DataformasScraper(ScraperBase):
     def _detectar_categoria(nombre: str) -> str | None:
         """Detecta categoría en base a términos clave en el nombre."""
         reglas = [
-            (r"\b(?:aud[ií]fonos|auriculares|headset|earphones|headphone)\b", "Audífonos"),
+            (
+                r"\b(?:aud[ií]fonos|auriculares|headset|earphones|headphone)\b",
+                "Audífonos",
+            ),
             (r"\b(?:teclado|keyboard)\b", "Teclados"),
             (r"\b(?:mouse|rat[oó]n)\b", "Mouse"),
             (r"\b(?:laptop|port[aá]til|notebook)\b", "Laptops"),
