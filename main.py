@@ -67,26 +67,24 @@ from modelo import ProductoSolicitado, ResultadoScraper
 # Que se ejecuten o no lo decide la DB (proveedores.activo)
 # ---------------------------------------------------------------------
 SCRAPERS_DISPONIBLES = {
-    # "intelec": IntelecScraper, #revisar mejor porque salio verificacion de no ser robot de cloudflare
-    # "amazon": AmazonScraper,
-    # "bpc": BPCScraper,
-    # "compunomicos": CompunomicosScraper,  # este creo que lo que vi iba producto a producto
-    # "eurocomp": EurocompScraper,
-    # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
-    # "cococo": CococoScraper, #pagina rara
+    "intelec": IntelecScraper,  # revisar mejor porque salio verificacion de no ser robot de cloudflare
+    "amazon": AmazonScraper,
+    "bpc": BPCScraper,
+    "compunomicos": CompunomicosScraper,  # este creo que lo que vi iba producto a producto
+    "eurocomp": EurocompScraper,
+    "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
+    "cococo": CococoScraper,  # pagina rara
     "dataformas": DataformasScraper,  # pidio restablecer la contraseña
-    # "cdc": CDCScraper,
+    "cdc": CDCScraper,
 }
 
 
 def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoScraper]:
     """Corre los scrapers indicados con la query dada.
 
-    Los scrapers se dividen en dos grupos:
-      - Los que usan el browser Playwright compartido (default)
-      - Los que se auto-provisionan su propio browser (ej: Amazon con Patchright)
-    Estos ultimos DEBEN correr fuera del context de sync_playwright() para
-    evitar el conflicto de loops entre Playwright y Patchright en el mismo proceso.
+    Cada proveedor está TOTALMENTE aislado: si uno falla al abrir el navegador,
+    al hacer login, al buscar o al cerrar, se registra el fallo y se continúa
+    con el siguiente. Un proveedor caído NUNCA tumba a los demás.
     """
     resultados: list[ResultadoScraper] = []
 
@@ -100,7 +98,13 @@ def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoS
         print("  ⚠ Sin scrapers implementados activos")
         return resultados
 
-    # Separar por tipo
+    # Avisar en el log qué proveedores activos NO tienen scraper implementado
+    sin_implementar = [c for c in codigos_activos if c not in SCRAPERS_DISPONIBLES]
+    if sin_implementar:
+        print(
+            f"  ⚠ Activos en DB pero sin scraper implementado (se omiten): {sin_implementar}"
+        )
+
     compartidos = [(c, cls) for c, cls in a_correr if cls.usa_browser_compartido]
     autonomos = [(c, cls) for c, cls in a_correr if not cls.usa_browser_compartido]
 
@@ -113,23 +117,51 @@ def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoS
             )
             try:
                 for codigo, ScraperCls in compartidos:
-                    print(f"\n▶ Ejecutando scraper: {codigo}")
-                    with ScraperCls(browser) as scraper:
-                        resultado = scraper.ejecutar(query)
-                        resultados.append(resultado)
-                        _log_resultado(resultado)
+                    resultados.append(
+                        _correr_un_scraper(codigo, ScraperCls, query, browser)
+                    )
             finally:
                 browser.close()
 
     # ---- Tanda 2: scrapers autonomos (fuera del sync_playwright) ----
     for codigo, ScraperCls in autonomos:
-        print(f"\n▶ Ejecutando scraper: {codigo}")
-        with ScraperCls(browser=None) as scraper:
-            resultado = scraper.ejecutar(query)
-            resultados.append(resultado)
-            _log_resultado(resultado)
+        resultados.append(_correr_un_scraper(codigo, ScraperCls, query, browser=None))
 
     return resultados
+
+
+def _correr_un_scraper(codigo, ScraperCls, query, browser) -> ResultadoScraper:
+    """
+    Corre UN scraper de punta a punta con aislamiento total.
+
+    Envuelve el ciclo de vida completo (abrir contexto + login + buscar + cerrar)
+    en un try/except. Cualquier fallo se convierte en un ResultadoScraper fallido
+    — nunca se propaga ni tumba a los demás proveedores.
+    """
+    import time
+    import traceback
+
+    print(f"\n▶ Ejecutando scraper: {codigo}")
+    inicio = time.perf_counter()
+    try:
+        with ScraperCls(browser) as scraper:
+            resultado = scraper.ejecutar(query)
+        _log_resultado(resultado)
+        return resultado
+    except Exception as e:
+        # Falló fuera de buscar(): típicamente al abrir el navegador o en el
+        # login (Intelec sin password, MFA de Intcomex, Dataformas, etc.).
+        duracion = int((time.perf_counter() - inicio) * 1000)
+        error_full = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        print(f"  ✗ [{codigo}] Falló al iniciar/cerrar ({duracion} ms): {e}")
+        return ResultadoScraper(
+            proveedor=codigo,
+            query=query,
+            exitoso=False,
+            productos=[],
+            duracion_ms=duracion,
+            error=error_full,
+        )
 
 
 def _log_resultado(resultado: ResultadoScraper) -> None:
@@ -188,7 +220,7 @@ def procesar_item(
             solicitud_item_id=item_id,
             scraper_ejecucion_id=ejecucion_id,
             productos_con_match=productos_con_match,
-            tiers_a_guardar=("exacto", "bueno", "similar"),
+            tiers_a_guardar=("exacto", "bueno", "similar", "dudoso"),
             intento_numero=intento_numero,
         )
         db.actualizar_total_guardados(ejecucion_id, guardados)
@@ -231,15 +263,24 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         productos_solicitados = interpretar_solicitud(texto_original)
 
         if not productos_solicitados:
-            print("  ⚠ La IA determinó que NO es cotización.")
-            db.guardar_interpretacion_ia(
-                solicitud_id,
-                es_cotizacion=False,
-                interpretacion_json={"es_cotizacion": False, "productos": []},
-                modelo_usado=config.gemini_model,
+            # La IA no devolvió productos. Puede ser texto no-cotización, o un
+            # fallo de IA (modelo caído, sin cuota, 404...). NO cerramos la
+            # solicitud: usamos el texto tal cual como búsqueda directa, para
+            # que el vendedor SIEMPRE vea algo.
+            print(
+                "  ⚠ La IA no devolvió productos. Uso el texto tal cual como búsqueda."
             )
-            db.actualizar_estado_solicitud(solicitud_id, "cerrada")
-            return resumen
+            productos_solicitados = [
+                ProductoSolicitado(
+                    categoria=None,
+                    marca=None,
+                    linea=None,
+                    modelo=None,
+                    specs={},
+                    cantidad=1,
+                    query_sugerida=texto_original.strip()[:120],
+                )
+            ]
 
         # Guardar interpretación completa
         interpretacion_json = {
@@ -425,6 +466,106 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         raise
 
 
+def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
+    """
+    Modo 4: agrega UNO o MÁS renglones nuevos a una solicitud YA existente.
+
+    A diferencia del reintento (que corrige UN item), esto SUMA items a la
+    solicitud sin tocar los que ya estaban. Cada item nuevo arranca en intento #1.
+    """
+    print(f"\n{'='*70}")
+    print(f"AGREGANDO BÚSQUEDA A SOLICITUD: {solicitud_id}")
+    print(f"TEXTO NUEVO: {texto}")
+    print("=" * 70)
+
+    # Validar que la solicitud exista antes de tocar nada
+    solicitud = db.obtener_solicitud(solicitud_id)
+    if not solicitud:
+        raise ValueError(f"Solicitud {solicitud_id} no existe")
+
+    resumen: dict = {
+        "solicitud_id": solicitud_id,
+        "texto_agregado": texto,
+        "items_nuevos": [],
+    }
+
+    try:
+        # Marcar scrapeando (para que el polling del frontend despierte)
+        db.actualizar_estado_solicitud(solicitud_id, "scrapeando")
+
+        # Interpretar con IA
+        print("\n[1/3] Interpretando con IA...")
+        productos_solicitados = interpretar_solicitud(texto)
+
+        # Fallback: si la IA no devolvió nada, buscamos el texto tal cual
+        if not productos_solicitados:
+            print(
+                "  ⚠ La IA no devolvió productos. Uso el texto tal cual como búsqueda."
+            )
+            productos_solicitados = [
+                ProductoSolicitado(
+                    categoria=None,
+                    marca=None,
+                    linea=None,
+                    modelo=None,
+                    specs={},
+                    cantidad=1,
+                    query_sugerida=texto.strip()[:120],
+                )
+            ]
+
+        print(f"  ✓ Se agregarán {len(productos_solicitados)} renglón(es):")
+        for i, p in enumerate(productos_solicitados, 1):
+            print(
+                f"    {i}. [{p.categoria}] {p.marca or ''} {p.linea or ''} "
+                f"{p.modelo or ''} — query: '{p.query_sugerida}' (x{p.cantidad})"
+            )
+
+        # Crear items NUEVOS: su orden continúa después de los existentes
+        orden_inicial = db.siguiente_orden_item(solicitud_id)
+        item_ids = db.guardar_items(
+            solicitud_id,
+            [p.to_dict() for p in productos_solicitados],
+            orden_inicial=orden_inicial,
+        )
+        resumen["items_nuevos"] = item_ids
+
+        # Scrapers + matcher + persistencia para cada item nuevo
+        print(f"\n[2/3] Corriendo scrapers para los renglones nuevos...")
+        codigos_activos = db.listar_proveedores_activos()
+        print(f"  Proveedores activos: {codigos_activos}")
+
+        matcher = Matcher(umbral_minimo=55.0)
+
+        for item_id, solicitado in zip(item_ids, productos_solicitados):
+            procesar_item(
+                item_id=item_id,
+                solicitado=solicitado,
+                matcher=matcher,
+                codigos_activos=codigos_activos,
+                intento_numero=1,
+            )
+
+        # Cerrar
+        db.actualizar_estado_solicitud(solicitud_id, "lista")
+
+        print(f"\n{'='*70}")
+        print(f"BÚSQUEDA AGREGADA — {len(item_ids)} renglón(es) nuevo(s)")
+        print("=" * 70)
+
+        return resumen
+
+    except Exception as e:
+        print(f"\n✗ ERROR al agregar búsqueda: {e}")
+        import traceback
+
+        traceback.print_exc()
+        db.actualizar_estado_solicitud(
+            solicitud_id, "error", error_mensaje=str(e)[:1000]
+        )
+        raise
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="RPA Cotizador SX")
 
@@ -451,6 +592,16 @@ def main() -> int:
         help="Texto libre para reinterpretar (obligatorio con --reintentar-item)",
     )
 
+    # Modo 4: agregar búsqueda(s) a una solicitud existente
+    parser.add_argument(
+        "--agregar-busqueda",
+        help="UUID de una solicitud existente a la que se le suman renglones nuevos",
+    )
+    parser.add_argument(
+        "--texto",
+        help="Texto libre de la nueva búsqueda (obligatorio con --agregar-busqueda)",
+    )
+
     # Otros
     parser.add_argument(
         "--canal",
@@ -465,8 +616,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # --- Determinar modo ---
-    if args.reintentar_item:
+    if args.agregar_busqueda:
+        # MODO 4: agregar renglones a una solicitud existente
+        if not args.texto:
+            print("✗ --agregar-busqueda requiere también --texto")
+            return 1
+        print(f"Modo: agregar búsqueda a la solicitud {args.agregar_busqueda}")
+        resumen = procesar_agregar_busqueda(args.agregar_busqueda, args.texto)
+
+    elif args.reintentar_item:
         # MODO 3: reintento de un item existente
         if not args.nuevo_texto:
             print("✗ --reintentar-item requiere también --nuevo-texto")
@@ -515,4 +673,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    from logger import configurar_logging
+
+    configurar_logging()
     sys.exit(main())

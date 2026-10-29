@@ -148,19 +148,28 @@ class InterpretadorIA:
                 _cache[clave] = data
                 return data
             except errors.ServerError as e:
-                print(f"  ⚠ Modelo {modelo} saturado (503), probando siguiente...")
+                print(f"  ⚠ Modelo {modelo} con error de servidor: {e}")
                 continue
             except errors.ClientError as e:
-                # 4xx = error nuestro (key mala, cuota diaria, formato)
-                # No sirve reintentar con otro modelo si es la key
+                # 4xx = error de nuestro lado. Mostramos el detalle real:
+                #   429 = sin cuota (RESOURCE_EXHAUSTED)
+                #   404 = modelo no existe / no disponible para esta key
+                #   400 = formato / API key inválida
+                print(f"  ⚠ Modelo {modelo} rechazó la petición: {e}")
                 if "API_KEY" in str(e).upper() or "PERMISSION" in str(e).upper():
                     raise
-                print(f"  ⚠ Modelo {modelo} rechazo la peticion: {e}")
                 continue
             except json.JSONDecodeError:
                 print(
                     f"  ⚠ Modelo {modelo} devolvio JSON invalido, probando siguiente..."
                 )
+                continue
+            except Exception as e:
+                # Red caída, DNS que no resuelve (getaddrinfo failed), timeout,
+                # SSL... Cualquier fallo de conexión NO debe tumbar el proceso.
+                # Probamos el siguiente modelo y, si todos fallan, cae al
+                # fallback determinístico de abajo (buscar el texto tal cual).
+                print(f"  ⚠ Modelo {modelo} falló por conexión u otro error: {e}")
                 continue
 
         # ---- Capa 4: fallback determinístico ----

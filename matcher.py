@@ -259,12 +259,12 @@ class Matcher:
 
         # Penalizar cuando query MUY corta vs nombre largo
         # (evita que "laptop" de 100 contra "LAPTOP DELL PRO 16 ULTRA...")
-        palabras_q = len(q.split())
-        palabras_n = len(n.split())
-        if palabras_q <= 2 and palabras_n > 6:
-            base *= 0.60
-        elif palabras_q <= 3 and palabras_n > 8:
-            base *= 0.80
+        # palabras_q = len(q.split())
+        # palabras_n = len(n.split())
+        # if palabras_q <= 2 and palabras_n > 6:
+        #     base *= 0.60
+        # elif palabras_q <= 3 and palabras_n > 8:
+        #     base *= 0.80
 
         return base
 

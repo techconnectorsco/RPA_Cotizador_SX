@@ -1,0 +1,93 @@
+======================================================================
+INICIO RPA — 2026-10-28T20:50:36
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : --solicitud-id 8aa6aed9-5a9a-4eb5-a9c8-e843998c5d47
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\rpa_20261028_205036.log
+======================================================================
+Modo: procesando solicitud existente 8aa6aed9-5a9a-4eb5-a9c8-e843998c5d47
+
+======================================================================
+PROCESANDO SOLICITUD: 8aa6aed9-5a9a-4eb5-a9c8-e843998c5d47
+TEXTO: laptop
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    intento 1/3 fallido, esperando 2s...
+    intento 2/3 fallido, esperando 4s...
+  ✓ IA detectó 1 producto(s):
+    1. [laptop]    — query: 'laptop' (x1)
+
+[2/3] Corriendo scrapers...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item 3c24a5ed-9a23-4cf3-b67e-576536423d33  (intento #1)  query: 'laptop'
+
+▶ Ejecutando scraper: bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=laptop
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=laptop&page=2
+  [bpc] Productos obtenidos: 19
+  ✓ 19 productos (8145 ms)
+
+▶ Ejecutando scraper: cdc
+  [cdc] Sesión iniciada con éxito.
+  [cdc] Buscando: 'laptop'
+  [cdc] Listado obtenido (30 artículos). Extrayendo detalle de 20 productos...
+  ✓ 20 productos (8127 ms)
+
+▶ Ejecutando scraper: cococo
+  [cococo] Sesión iniciada correctamente
+  [cococo] Buscando: laptop
+  [cococo] Esperando a que la búsqueda termine y las tarjetas estén visibles
+  [cococo] Página 1: 10 tarjetas de producto capturadas
+  [cococo] productVisited/register: 10/10 respuestas con producto
+  [cococo] Diagnóstico categoría API: lista=0, register=10
+  [cococo] API: 10/10 productos enriquecidos; categoría disponible en 10
+  ✓ 10 productos (8072 ms)
+
+▶ Ejecutando scraper: compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=laptop&post_type=product
+  [compunomicos] Productos obtenidos: 20
+  ✓ 20 productos (4866 ms)
+
+▶ Ejecutando scraper: dataformas
+⚠ [dataformas] ERROR: No fue posible iniciar sesión en Dataformas: Page.wait_for_function: Timeout 30000ms exceeded.
+  ✗ Fallo (0 ms): RuntimeError: No fue posible iniciar sesión en Dataformas: Page.wait_for_function: Timeout 30000ms e
+
+▶ Ejecutando scraper: eurocomp
+  [eurocomp] Buscando: laptop
+  [eurocomp] Procesando 20 productos
+  ✓ 20 productos (3108 ms)
+
+▶ Ejecutando scraper: intcomex
+⚠ [intcomex] ERROR: No fue posible iniciar sesión en Intcomex: Intcomex solicita una verificación adicional (MFA/OTP) que este scraper no puede completar automáticamente
+  ✗ Fallo (0 ms): RuntimeError: No fue posible iniciar sesión en Intcomex: Intcomex solicita una verificación adiciona
+
+▶ Ejecutando scraper: intelec
+  [intelec] Cargando https://www.intelec.co.cr/?s=laptop&post_type=product
+  [intelec] networkidle no llego en 15s, continuamos
+  [intelec] No aparecieron productos. Guardando HTML de debug...
+  [intelec] HTML guardado en debug\intelec_FALLO_laptop.html
+  ✓ 0 productos (23536 ms)
+
+▶ Ejecutando scraper: amazon
+  [amazon] Cargando https://www.amazon.com/s?k=laptop
+  [amazon] 22 productos detectados
+  ✓ 22 productos (63739 ms)
+    [bpc] 19 crudos → guardados 19 (exacto:0 bueno:0 similar:0 dudoso:19)
+    [cdc] 20 crudos → guardados 20 (exacto:0 bueno:0 similar:0 dudoso:20)
+    [cococo] 10 crudos → guardados 8 (exacto:0 bueno:4 similar:2 dudoso:2)
+    [compunomicos] 20 crudos → guardados 19 (exacto:0 bueno:19 similar:0 dudoso:0)
+    [eurocomp] 20 crudos → guardados 16 (exacto:0 bueno:16 similar:0 dudoso:0)
+    [amazon] 22 crudos → guardados 21 (exacto:0 bueno:2 similar:2 dudoso:17)
+
+======================================================================
+RESUMEN
+======================================================================
+  Estado:              lista
+  Items solicitados:   1
+  Productos guardados: 103
+    exactos:  0
+    buenos:   41

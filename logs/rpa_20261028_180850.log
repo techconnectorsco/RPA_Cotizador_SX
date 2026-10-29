@@ -1,0 +1,40 @@
+======================================================================
+INICIO RPA — 2026-10-28T18:08:50
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : --solicitud-id 708d15b5-f698-430c-bf95-bb7883eb4ffc
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\rpa_20261028_180850.log
+======================================================================
+Modo: procesando solicitud existente 708d15b5-f698-430c-bf95-bb7883eb4ffc
+
+======================================================================
+PROCESANDO SOLICITUD: 708d15b5-f698-430c-bf95-bb7883eb4ffc
+TEXTO: laptop
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    intento 1/3 fallido, esperando 2s...
+  ✓ IA detectó 1 producto(s):
+    1. [laptop]    — query: 'laptop portatil' (x1)
+
+[2/3] Corriendo scrapers...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item 70fb87c6-2e61-4d42-86cd-d54250a57944  (intento #1)  query: 'laptop portatil'
+
+▶ Ejecutando scraper: amazon
+  [amazon] Cargando https://www.amazon.com/s?k=laptop+portatil
+  [amazon] 16 productos detectados
+  ✓ 16 productos (44857 ms)
+    [amazon] 16 crudos → guardados 0 (exacto:0 bueno:0 similar:0 dudoso:16)
+
+======================================================================
+RESUMEN
+======================================================================
+  Estado:              lista
+  Items solicitados:   1
+  Productos guardados: 0
+    exactos:  0
+    buenos:   0

@@ -179,14 +179,23 @@ def guardar_interpretacion_ia(
 # =====================================================================
 # ITEMS DE SOLICITUD
 # =====================================================================
-def guardar_items(solicitud_id: str, productos_solicitados: list[dict]) -> list[str]:
+def guardar_items(
+    solicitud_id: str,
+    productos_solicitados: list[dict],
+    orden_inicial: int = 0,
+) -> list[str]:
     """
     Guarda los items (productos que la IA identificó en la solicitud).
     Devuelve lista de UUIDs generados, en el mismo orden.
+
+    `orden_inicial` permite que al AGREGAR renglones a una solicitud existente
+    (modo 4) los nuevos continúen después de los que ya estaban, sin pisar su
+    número de orden. Default = 0 mantiene el comportamiento original.
     """
     ids: list[str] = []
     with get_conn() as conn:
-        for orden, p in enumerate(productos_solicitados):
+        for desplazamiento, p in enumerate(productos_solicitados):
+            orden = orden_inicial + desplazamiento
             row = conn.execute(
                 """
                 INSERT INTO solicitud_items (
@@ -239,6 +248,25 @@ def siguiente_intento_numero(item_id: str) -> int:
             WHERE solicitud_item_id = %s
             """,
             (item_id,),
+        ).fetchone()
+    return int(row["siguiente"])
+
+
+def siguiente_orden_item(solicitud_id: str) -> int:
+    """
+    Devuelve el próximo valor de `orden` para un item nuevo de esta solicitud.
+    Regla: MAX(orden) existente + 1. Si la solicitud aún no tiene items, 0.
+    Lo usa el modo 'agregar búsqueda' para que los renglones nuevos queden
+    después de los que ya existían.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(MAX(orden), -1) + 1 AS siguiente
+            FROM solicitud_items
+            WHERE solicitud_id = %s
+            """,
+            (solicitud_id,),
         ).fetchone()
     return int(row["siguiente"])
 
