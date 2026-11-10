@@ -1,0 +1,73 @@
+======================================================================
+INICIO RPA — 2026-11-05T14:38:52
+  Ejecutable : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_cotizador_SX\venv\Scripts\python.exe
+  Directorio : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX
+  Argumentos : --solicitud-id 5505960c-a266-4bd8-a750-561a651c1e7c
+  Log        : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX\logs\rpa_20261105_143852.log
+======================================================================
+Modo: procesando solicitud existente 5505960c-a266-4bd8-a750-561a651c1e7c
+
+======================================================================
+PROCESANDO SOLICITUD: 5505960c-a266-4bd8-a750-561a651c1e7c
+TEXTO: Monitor LG 24
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+  ✓ IA detectó 1 producto(s):
+    1. [monitor] LG   — query: 'Monitor LG 24' (x1)
+
+[2/3] Corriendo scrapers...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item 0068eb89-4724-43d5-a065-177a22fd85e3  (intento #1)  query: 'Monitor LG 24'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['dataformas', 'intcomex', 'intelec']
+  Corriendo 6 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+
+▶ cdc
+  [amazon] Cargando https://www.amazon.com/s?k=Monitor+LG+24
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=Monitor+LG+24
+  [cdc] Sesión iniciada con éxito.
+  [cdc] Buscando: 'Monitor LG 24'
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=Monitor+LG+24&page=2
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  [amazon] 22 productos detectados
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=Monitor+LG+24&page=3
+  ✓ 0 productos (2600 ms)
+  ✓ 28 productos (10082 ms)
+
+▶ compunomicos
+  [cococo] Sesión iniciada correctamente
+  [cococo] Buscando: Monitor LG 24
+  [compunomicos] Cargando https://compunomicos.com/?s=Monitor+LG+24&post_type=product
+  [compunomicos] Cargando https://compunomicos.com/?s=Monitor+LG+24&post_type=product&product-page=2
+  [compunomicos] Productos obtenidos: 30
+  ✓ 30 productos (8537 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: Monitor LG 24
+  [eurocomp] Procesando 30 productos
+  ✓ 30 productos (3349 ms)
+⚠ [cococo] ERROR: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".search-box_button button")
+
+  ✓ 22 productos (56041 ms)
+    [bpc] 28 crudos → guardados 28 (exacto:0 bueno:0 similar:4 dudoso:24)
+    [compunomicos] 30 crudos → guardados 29 (exacto:0 bueno:0 similar:29 dudoso:0)
+    [eurocomp] 30 crudos → guardados 29 (exacto:0 bueno:0 similar:29 dudoso:0)
+    [amazon] 22 crudos → guardados 19 (exacto:7 bueno:3 similar:7 dudoso:2)
+
+======================================================================
+RESUMEN
+======================================================================
+  Estado:              lista
+  Items solicitados:   1
+  Productos guardados: 105
+    exactos:  7
+    buenos:   3

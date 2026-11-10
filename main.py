@@ -74,7 +74,7 @@ SCRAPERS_DISPONIBLES = {
     "eurocomp": EurocompScraper,
     # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
     "cococo": CococoScraper,  # pagina rara
-    "dataformas": DataformasScraper,  # pidio restablecer la contraseña
+    #"dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,
 }
 

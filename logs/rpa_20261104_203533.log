@@ -1,0 +1,58 @@
+======================================================================
+INICIO RPA — 2026-11-04T20:35:33
+  Ejecutable : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_cotizador_SX\venv\Scripts\python.exe
+  Directorio : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX
+  Argumentos : --solicitud-id 103952cf-a45f-4e35-9786-a8be31139340
+  Log        : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX\logs\rpa_20261104_203533.log
+======================================================================
+Modo: procesando solicitud existente 103952cf-a45f-4e35-9786-a8be31139340
+
+======================================================================
+PROCESANDO SOLICITUD: 103952cf-a45f-4e35-9786-a8be31139340
+TEXTO: quiero por favor una laptop de 32 gb ram
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+  ✓ IA detectó 1 producto(s):
+    1. [laptop]    — query: 'laptop 32GB RAM' (x1)
+
+[2/3] Corriendo scrapers...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item b5565749-2ebd-489d-a030-7a402db2b8b5  (intento #1)  query: 'laptop 32GB RAM'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 7 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+  ✓ 2 productos (4325 ms)
+
+▶ cococo
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  ✗ Fallo (31410 ms): TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".search-bo
+
+▶ eurocomp
+⚠ [dataformas] ERROR: No fue posible iniciar sesión en Dataformas: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://dataformas.com/profile/login", waiting until "networkidle"
+
+  ✓ 6 productos (1908 ms)
+  ✓ 22 productos (57718 ms)
+    [bpc] 2 crudos → guardados 2 (exacto:0 bueno:0 similar:0 dudoso:2)
+    [compunomicos] 4 crudos → guardados 4 (exacto:0 bueno:1 similar:0 dudoso:3)
+    [eurocomp] 6 crudos → guardados 6 (exacto:0 bueno:1 similar:0 dudoso:5)
+    [amazon] 22 crudos → guardados 22 (exacto:0 bueno:1 similar:11 dudoso:10)
+
+======================================================================
+RESUMEN
+======================================================================
+  Estado:              lista
+  Items solicitados:   1
+  Productos guardados: 34
+    exactos:  0
+    buenos:   3

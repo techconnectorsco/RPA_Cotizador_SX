@@ -1,0 +1,36 @@
+======================================================================
+INICIO RPA — 2026-11-04T21:41:16
+  Ejecutable : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_cotizador_SX\venv\Scripts\python.exe
+  Directorio : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX
+  Argumentos : --solicitud-id 77417969-e704-474c-bbf6-4dd610ab68ab
+  Log        : C:\Users\canes\OneDrive\Documentos\Pasantia\CotizadorDoc\RPA_Cotizador_SX\logs\rpa_20261104_214116.log
+======================================================================
+Modo: procesando solicitud existente 77417969-e704-474c-bbf6-4dd610ab68ab
+
+======================================================================
+PROCESANDO SOLICITUD: 77417969-e704-474c-bbf6-4dd610ab68ab
+TEXTO: Memoria Ram 16gb
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+  ✓ IA detectó 1 producto(s):
+    1. [memoria_ram]    — query: 'Memoria RAM 16GB' (x1)
+
+[2/3] Corriendo scrapers...
+  Proveedores activos: ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+  → Item 01a5a58a-6706-43d9-a4b5-143cfa6157c7  (intento #1)  query: 'Memoria RAM 16GB'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['dataformas', 'intcomex', 'intelec']
+  Corriendo 6 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+  ✓ 21 productos (7537 ms)
+  ✓ 16 productos (37864 ms)
+⚠ [cococo] ERROR: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".search-box_button button")
+

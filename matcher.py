@@ -7,17 +7,91 @@ Mejoras vs v1:
   2. Bonus/penalizaciones por "variantes" (COMBO, USADA, RECERTIFICADA...).
   3. Defaults neutrales ajustados de 50 -> 70 (evita empates masivos).
   4. Clasificacion en TIERS (exacto/bueno/similar/dudoso) para la UI.
+
+Mejoras v2.1 (consistencia solicitud vs proveedor):
+  5. Marca, specs y bonus se evaluan sobre nombre + descripcion_corta +
+     specs del proveedor (antes solo el nombre).
+  6. Normalizacion de unidades: 16" / 16'' / 16 pulg / 16-inch / 16.0"
+     -> "16 pulgadas"; 16 GB / 16-gb -> "16gb"; tildes eliminadas.
+  7. Busqueda por palabra completa (evita que "lg" haga match en "pulgadas").
+  8. Query sin palabras duplicadas y bonus que respeta marcas cortas (LG, HP)
+     y numeros (16, 24, 27).
+  9. Productos SIN precio visible van siempre a tier DUDOSO (score tope 50)
+     y al final de la lista. NO se descartan: se guardan en la DB igual.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 from rapidfuzz import fuzz
 
 from modelo import ProductoEncontrado, ProductoSolicitado
+
+
+# ---------------------------------------------------------------------
+# NORMALIZACION de texto (se aplica igual a solicitud y a candidato)
+# ---------------------------------------------------------------------
+_RE_PULGADAS = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*-?\s*"
+    r"(?:\"|''|'|”|“|″|pulgadas|pulgada|pulg\b\.?|inches\b|inch\b|in\b)"
+)
+_RE_CAPACIDAD = re.compile(r"(\d+(?:[.,]\d+)?)\s*-?\s*(gb|tb)\b")
+
+
+def _normalizar_numero(num: str) -> str:
+    """'16.0' -> '16', '15,6' -> '15.6'."""
+    n = num.replace(",", ".")
+    if "." in n:
+        n = n.rstrip("0").rstrip(".")
+    return n
+
+
+def _normalizar(texto: Any) -> str:
+    """
+    Minusculas, sin tildes y con unidades unificadas:
+      '16"', "16''", '16 pulg.', '16-inch', '16.0”'  -> '16 pulgadas'
+      '16 GB', '16-gb'                                -> '16gb'
+    """
+    if texto is None or texto == "":
+        return ""
+    t = str(texto).lower()
+    t = _RE_PULGADAS.sub(lambda m: f" {_normalizar_numero(m.group(1))} pulgadas ", t)
+    t = _RE_CAPACIDAD.sub(lambda m: f"{_normalizar_numero(m.group(1))}{m.group(2)}", t)
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _contiene_palabra(termino: str, texto: str) -> bool:
+    """True si `termino` aparece como palabra completa (no como subcadena)."""
+    termino = termino.strip()
+    if not termino:
+        return False
+    patron = rf"(?<![a-z0-9]){re.escape(termino)}(?![a-z0-9])"
+    return re.search(patron, texto) is not None
+
+
+def _compactar(texto: str) -> str:
+    """'16MR70-B' -> '16mr70b' (para comparar modelos sin guiones/espacios)."""
+    return re.sub(r"[^a-z0-9]", "", texto.lower())
+
+
+def _texto_candidato(candidato: ProductoEncontrado) -> str:
+    """Nombre + marca + descripcion corta + specs del proveedor, normalizado."""
+    partes = [
+        candidato.nombre or "",
+        candidato.marca or "",
+        candidato.descripcion_corta or "",
+    ]
+    for k, v in (candidato.specs or {}).items():
+        if v is not None:
+            partes.append(f"{k} {v}")
+    return _normalizar(" ".join(partes))
+
 
 # ---------------------------------------------------------------------
 # BLACKLIST por categoria: descarta accesorios cuando piden el producto
@@ -75,14 +149,52 @@ ETIQUETAS_VARIANTE = {
     "outlet": "OUTLET",
 }
 
+# Equivalencias de nombres de marca comunes
+EQUIVALENCIAS_MARCA: dict[str, list[str]] = {
+    "hp": ["hp", "hewlett", "hewlett packard", "hewlett-packard"],
+    "asus": ["asus", "asustek"],
+    "acer": ["acer"],
+    "lg": ["lg", "lg electronics"],
+}
+
+STOPWORDS = {
+    "de",
+    "la",
+    "el",
+    "un",
+    "una",
+    "los",
+    "las",
+    "y",
+    "con",
+    "para",
+    "por",
+    "en",
+}
+
 
 # ---------------------------------------------------------------------
 # TIERS para clasificar visualmente el match
 # ---------------------------------------------------------------------
-TIER_EXACTO = "exacto"  # score >= 95
-TIER_BUENO = "bueno"  # 80 - 94
-TIER_SIMILAR = "similar"  # 65 - 79
-TIER_DUDOSO = "dudoso"  # < 65
+TIER_EXACTO = "exacto"  # score >= 85
+TIER_BUENO = "bueno"  # 70 - 84
+TIER_SIMILAR = "similar"  # 55 - 69
+TIER_DUDOSO = "dudoso"  # < 55
+
+
+# Score maximo para un producto sin precio visible (queda en rango dudoso)
+SCORE_MAX_SIN_PRECIO = 50.0
+
+
+def sin_precio_visible(producto: ProductoEncontrado) -> bool:
+    """True si el proveedor no mostro un precio utilizable (None, 0 o invalido)."""
+    precio = producto.precio
+    if precio is None:
+        return True
+    try:
+        return float(precio) <= 0
+    except (TypeError, ValueError):
+        return True
 
 
 def clasificar_tier(score: float) -> str:
@@ -156,11 +268,13 @@ class Matcher:
         candidatos: list[ProductoEncontrado],
     ) -> list[ResultadoMatch]:
         resultados = [self._calcular_uno(solicitado, c) for c in candidatos]
-        # Ordenar: descartados al final, luego por score desc,
+        # Ordenar: descartados al final, luego los SIN precio visible
+        # (siempre detras de los cotizables), luego por score desc,
         # y para empates: mas barato primero (util para queries genericas)
         resultados.sort(
             key=lambda r: (
                 r.descartado,
+                sin_precio_visible(r.producto),
                 -r.score_total,
                 r.producto.precio if r.producto.precio is not None else float("inf"),
             )
@@ -181,13 +295,20 @@ class Matcher:
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
     ) -> ResultadoMatch:
-        nombre_cand = candidato.nombre.lower()
+        # Nombre normalizado: base para blacklist, variantes y score textual
+        nombre_cand = _normalizar(candidato.nombre)
+        # Texto completo (nombre + marca + descripcion + specs): base para
+        # marca, specs y bonus, asi no se pierde info que el proveedor puso
+        # fuera del titulo.
+        texto_cand = _texto_candidato(candidato)
 
         # ---- Filtro duro: blacklist por categoria ----
+        # Solo sobre el NOMBRE: la descripcion suele decir "incluye cable"
+        # y eso no convierte al producto en un accesorio.
         if solicitado.categoria:
-            cat_key = solicitado.categoria.lower()
+            cat_key = _normalizar(solicitado.categoria)
             for palabra in BLACKLIST_CATEGORIA.get(cat_key, []):
-                if palabra in nombre_cand:
+                if _contiene_palabra(palabra, nombre_cand):
                     return ResultadoMatch(
                         producto=candidato,
                         score_total=0.0,
@@ -203,10 +324,10 @@ class Matcher:
         score_texto = self._score_textual(query, nombre_cand)
 
         # ---- Score de marca ----
-        score_marca = self._score_marca(solicitado, candidato)
+        score_marca = self._score_marca(solicitado, candidato, texto_cand)
 
         # ---- Score de specs ----
-        score_specs = self._score_specs(solicitado, candidato)
+        score_specs = self._score_specs(solicitado, candidato, texto_cand)
 
         # ---- Ponderacion base ----
         score_base = (
@@ -216,19 +337,29 @@ class Matcher:
         )
 
         # ---- Ajuste por variantes (COMBO, USADA, etc.) ----
-        ajuste_var, etiquetas_variante = self._ajuste_variantes(solicitado, candidato)
+        ajuste_var, etiquetas_variante = self._ajuste_variantes(
+            solicitado, candidato, nombre_cand
+        )
 
         # ---- Bonus por match de identidad (marca + linea/modelo) ----
-        bonus_identidad = self._bonus_identidad(solicitado, candidato)
+        bonus_identidad = self._bonus_identidad(solicitado, texto_cand)
 
         # ---- Bonus por query totalmente contenida en el nombre ----
-        bonus_contenida = self._bonus_query_contenida(solicitado, candidato)
+        bonus_contenida = self._bonus_query_contenida(solicitado, texto_cand)
 
         # ---- Score total (clamp a 0-100) ----
         score_total = max(
             0.0, min(100.0, score_base + ajuste_var + bonus_identidad + bonus_contenida)
         )
         tier = clasificar_tier(score_total)
+
+        # ---- Regla de precio: sin precio visible -> siempre DUDOSO ----
+        # Lo que interesa es cotizar, asi que aunque el producto coincida al
+        # 100% no puede salir como exacto/bueno/similar sin precio. NO se
+        # descarta: se guarda en la DB y la UI ya muestra "sin precio visible".
+        if sin_precio_visible(candidato):
+            score_total = min(score_total, SCORE_MAX_SIN_PRECIO)
+            tier = TIER_DUDOSO
 
         return ResultadoMatch(
             producto=candidato,
@@ -248,8 +379,8 @@ class Matcher:
     # -----------------------------------------------------------------
     @staticmethod
     def _score_textual(query: str, nombre: str) -> float:
-        q = query.lower()
-        n = nombre.lower()
+        q = _normalizar(query)
+        n = _normalizar(nombre)
 
         r_set = fuzz.token_set_ratio(q, n)  # todas las palabras estan?
         r_sort = fuzz.token_sort_ratio(q, n)  # orden similar?
@@ -290,36 +421,42 @@ class Matcher:
                 partes.append(str(v))
         if p.query_sugerida:
             partes.append(p.query_sugerida)
-        return " ".join(partes)
+
+        # Quitar palabras repetidas (preservando el orden). Sin esto,
+        # "monitor LG 16 monitor 16 pulgadas LG" baja el token_sort_ratio.
+        vistas: set[str] = set()
+        tokens: list[str] = []
+        for tok in _normalizar(" ".join(partes)).split():
+            if tok not in vistas:
+                vistas.add(tok)
+                tokens.append(tok)
+        return " ".join(tokens)
 
     # -----------------------------------------------------------------
     @staticmethod
     def _score_marca(
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
+        texto_cand: str | None = None,
     ) -> float:
         if not solicitado.marca:
             return 70.0  # sin marca pedida = neutral favorable (antes era 50)
 
-        marca_ped = solicitado.marca.lower()
+        marca_ped = _normalizar(solicitado.marca)
 
         # Normalizar variantes de nombres de marca comunes
-        equivalencias = {
-            "hp": ["hp", "hewlett", "hewlett packard", "hewlett-packard"],
-            "asus": ["asus", "asustek"],
-            "acer": ["acer"],
-        }
-        aliases = equivalencias.get(marca_ped, [marca_ped])
+        aliases = EQUIVALENCIAS_MARCA.get(marca_ped, [marca_ped])
 
         # 1. Comparar contra marca extraida por el scraper
         if candidato.marca:
-            marca_cand = candidato.marca.lower()
-            if any(a in marca_cand for a in aliases):
+            marca_cand = _normalizar(candidato.marca)
+            if any(_contiene_palabra(a, marca_cand) for a in aliases):
                 return 100.0
 
-        # 2. Fallback: buscar en el nombre
-        nombre_cand = candidato.nombre.lower()
-        if any(a in nombre_cand for a in aliases):
+        # 2. Fallback: buscar en nombre + descripcion + specs
+        #    (por palabra completa: "lg" NO debe coincidir con "pulgadas")
+        texto = texto_cand if texto_cand is not None else _texto_candidato(candidato)
+        if any(_contiene_palabra(a, texto) for a in aliases):
             return 100.0
 
         return 0.0
@@ -329,24 +466,27 @@ class Matcher:
         self,
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
+        texto_cand: str | None = None,
     ) -> float:
         if not solicitado.specs:
             return 70.0  # sin specs pedidas = neutral favorable (antes 50)
 
-        nombre_cand = candidato.nombre.lower()
+        texto = texto_cand if texto_cand is not None else _texto_candidato(candidato)
         specs_cand = candidato.specs or {}
 
         aciertos = 0
         total = 0
 
         for clave, valor in solicitado.specs.items():
-            if valor is None:
+            if valor is None or valor is False:
                 continue
             total += 1
-            if specs_cand.get(clave) == valor:
+            if clave in specs_cand and _normalizar(specs_cand.get(clave)) == _normalizar(
+                valor
+            ):
                 aciertos += 1
                 continue
-            if _spec_en_nombre(clave, valor, nombre_cand):
+            if _spec_en_nombre(clave, valor, texto):
                 aciertos += 1
 
         if total == 0:
@@ -358,19 +498,21 @@ class Matcher:
     def _ajuste_variantes(
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
+        nombre_cand: str | None = None,
     ) -> tuple[float, list[str]]:
         """
         Devuelve (ajuste_score, lista_etiquetas_detectadas).
         Penaliza cuando el candidato tiene palabras como COMBO/USADA/etc.
         y el cliente NO las pidio explicitamente.
+        Solo mira el NOMBRE y por palabra completa.
         """
-        nombre_lower = candidato.nombre.lower()
-        texto_pedido = (
-            (solicitado.query_sugerida or "").lower()
+        nombre_lower = nombre_cand if nombre_cand is not None else _normalizar(candidato.nombre)
+        texto_pedido = _normalizar(
+            (solicitado.query_sugerida or "")
             + " "
-            + (solicitado.modelo or "").lower()
+            + (solicitado.modelo or "")
             + " "
-            + (solicitado.linea or "").lower()
+            + (solicitado.linea or "")
         )
 
         ajuste = 0.0
@@ -378,13 +520,13 @@ class Matcher:
         etiquetas_vistas: set[str] = set()  # evita duplicados (usado/usada)
 
         for palabra, penalizacion in VARIANTES_NEGATIVAS.items():
-            if palabra in nombre_lower:
+            if _contiene_palabra(palabra, nombre_lower):
                 etiqueta = ETIQUETAS_VARIANTE[palabra]
                 if etiqueta not in etiquetas_vistas:
                     etiquetas.append(etiqueta)
                     etiquetas_vistas.add(etiqueta)
                 # Solo penalizar si el usuario NO lo pidió
-                if palabra not in texto_pedido:
+                if not _contiene_palabra(palabra, texto_pedido):
                     ajuste += penalizacion
 
         return ajuste, etiquetas
@@ -395,27 +537,31 @@ class Matcher:
     @staticmethod
     def _bonus_identidad(
         solicitado: ProductoSolicitado,
-        candidato: ProductoEncontrado,
+        texto_cand: str,
     ) -> float:
         """
         Si marca + (linea o modelo) del pedido aparecen todos en el
-        nombre del candidato, es un match de identidad clara: +10.
+        texto del candidato, es un match de identidad clara: +10.
         """
         if not solicitado.marca:
             return 0.0
 
-        nombre = candidato.nombre.lower()
-        marca_ok = solicitado.marca.lower() in nombre
-
-        if not marca_ok:
+        marca_ped = _normalizar(solicitado.marca)
+        aliases = EQUIVALENCIAS_MARCA.get(marca_ped, [marca_ped])
+        if not any(_contiene_palabra(a, texto_cand) for a in aliases):
             return 0.0
 
-        # marca + linea
-        if solicitado.linea and solicitado.linea.lower() in nombre:
-            return 10.0
-        # marca + modelo
-        if solicitado.modelo and solicitado.modelo.lower() in nombre:
-            return 10.0
+        compacto = _compactar(texto_cand)
+        for campo in (solicitado.linea, solicitado.modelo):
+            if not campo:
+                continue
+            c = _normalizar(campo)
+            # marca + linea / marca + modelo (tolerante a guiones y espacios:
+            # "16MR70" coincide con "16MR70-B" o "16 MR70")
+            if _contiene_palabra(c, texto_cand) or (
+                len(_compactar(c)) >= 4 and _compactar(c) in compacto
+            ):
+                return 10.0
 
         return 0.0
 
@@ -423,77 +569,75 @@ class Matcher:
     @staticmethod
     def _bonus_query_contenida(
         solicitado: ProductoSolicitado,
-        candidato: ProductoEncontrado,
+        texto_cand: str,
     ) -> float:
         """
         Si TODAS las palabras significativas de la query aparecen en el
-        nombre del candidato (en cualquier orden), +8.
+        texto del candidato (en cualquier orden), +8.
 
-        Palabras ignoradas: articulos y palabras muy cortas.
+        Palabras ignoradas: articulos. Se conservan marcas cortas (LG, HP)
+        y numeros (16, 24) porque son los que definen el producto.
         """
         if not solicitado.query_sugerida:
             return 0.0
 
-        STOPWORDS = {
-            "de",
-            "la",
-            "el",
-            "un",
-            "una",
-            "los",
-            "las",
-            "y",
-            "con",
-            "para",
-            "por",
-            "en",
-        }
         palabras = [
-            w.lower()
-            for w in solicitado.query_sugerida.split()
-            if len(w) >= 3 and w.lower() not in STOPWORDS
+            w
+            for w in _normalizar(solicitado.query_sugerida).split()
+            if w not in STOPWORDS and (len(w) >= 2 or w.isdigit())
         ]
         if not palabras:
             return 0.0
 
-        nombre = candidato.nombre.lower()
-        # Todas las palabras deben estar
-        if all(p in nombre for p in palabras):
+        # Todas las palabras deben estar (como palabra completa)
+        if all(_contiene_palabra(p, texto_cand) for p in palabras):
             return 8.0
         return 0.0
 
 
 def _spec_en_nombre(clave: str, valor: Any, nombre: str) -> bool:
+    """
+    Busca una spec pedida dentro del texto (ya normalizado) del candidato.
+    Se mantiene el nombre por compatibilidad, pero recibe el texto completo.
+    """
+    nombre = _normalizar(nombre)
     if clave == "ram_gb":
         return _contiene_gb(nombre, valor)
     if clave == "almacenamiento_gb":
         return _contiene_gb(nombre, valor) or _contiene_ssd_hdd(nombre, valor)
     if clave == "pantalla_pulgadas":
-        patterns = [
-            rf'\b{valor}["\'\u2033]',
-            rf"\b{valor}\s*(?:pulgadas|inch|in)\b",
-            rf"\b{re.escape(str(valor))}\s*”",
-        ]
-        return any(re.search(p, nombre) for p in patterns)
-    if clave == "cpu":
-        return str(valor).lower() in nombre
-    if clave == "almacenamiento_tipo":
-        return str(valor).lower() in nombre
-    return False
+        num = _normalizar_numero(str(valor))
+        # Tras _normalizar, 16" / 16 pulg / 16-inch / 16.0" quedan "16 pulgadas"
+        return re.search(rf"(?<![\d.]){re.escape(num)} pulgadas\b", nombre) is not None
+    if clave in ("cpu", "almacenamiento_tipo"):
+        return _contiene_palabra(_normalizar(valor), nombre)
+    # Spec booleana (ej. "tactil": True): buscar el nombre de la clave
+    if valor is True:
+        return _contiene_palabra(_normalizar(clave.replace("_", " ")), nombre)
+    # Cualquier otra spec: buscar el valor como palabra completa
+    return _contiene_palabra(_normalizar(valor), nombre)
 
 
 def _contiene_gb(texto: str, valor: int | float) -> bool:
+    num = _normalizar_numero(str(valor))
     patterns = [
-        rf"\b{valor}\s*gb\b",
-        rf"\b{valor}gb\b",
-        rf"\b{valor}-gb\b",
+        rf"(?<![\d.]){re.escape(num)}\s*-?\s*gb\b",
     ]
+    # 1024 / 1000 GB tambien se escriben como 1TB, 2048 como 2TB, etc.
+    try:
+        v = float(valor)
+        for divisor in (1024, 1000):
+            if v >= divisor and v % divisor == 0:
+                patterns.append(rf"(?<![\d.]){int(v // divisor)}\s*-?\s*tb\b")
+    except (TypeError, ValueError):
+        pass
     return any(re.search(p, texto, re.IGNORECASE) for p in patterns)
 
 
 def _contiene_ssd_hdd(texto: str, valor: int | float) -> bool:
+    num = re.escape(_normalizar_numero(str(valor)))
     patterns = [
-        rf"\b{valor}\s*(?:gb|g)?[-\s]*(?:ssd|hdd|nvme)\b",
-        rf"\b(?:ssd|hdd|nvme)[-\s]*{valor}",
+        rf"(?<![\d.]){num}\s*(?:gb|g)?[-\s]*(?:ssd|hdd|nvme)\b",
+        rf"\b(?:ssd|hdd|nvme)[-\s]*{num}(?![\d.])",
     ]
     return any(re.search(p, texto, re.IGNORECASE) for p in patterns)
