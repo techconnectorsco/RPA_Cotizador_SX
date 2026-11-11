@@ -1,24 +1,27 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from pydantic import BaseModel
 import subprocess
 import sys
-import os
+from pathlib import Path
 
 app = FastAPI(title="RPA Cotizador API")
 
+# Toma la ruta exacta de la carpeta donde esté corriendo (Demo o Prod)
+BASE_DIR = Path(__file__).resolve().parent
+
 
 class PeticionRPA(BaseModel):
-    modo: str  # 'nueva', 'reintento', 'agregar'
-    solicitud_id: str = None
-    item_id: str = None
-    texto: str = None
+    modo: str
+    solicitud_id: str | None = None
+    item_id: str | None = None
+    texto: str | None = None
 
 
-def ejecutar_en_background(args_lista):
-    # En Windows, esto asegura que corra 100% despegado y sin abrir ventanas cmd
+def ejecutar_en_background(args_lista: list[str]):
     DETACHED_PROCESS = 0x00000008
     subprocess.Popen(
         [sys.executable, "main.py"] + args_lista,
+        cwd=str(BASE_DIR),  # Obliga a main.py a leer el .env de SU carpeta
         creationflags=DETACHED_PROCESS,
         close_fds=True,
     )
@@ -26,14 +29,14 @@ def ejecutar_en_background(args_lista):
 
 @app.post("/api/disparar")
 def disparar_rpa(req: PeticionRPA):
-    if req.modo == "nueva":
+    if req.modo == "nueva" and req.solicitud_id:
         args = ["--solicitud-id", req.solicitud_id]
-    elif req.modo == "reintento":
+    elif req.modo == "reintento" and req.item_id and req.texto:
         args = ["--reintentar-item", req.item_id, "--nuevo-texto", req.texto]
-    elif req.modo == "agregar":
+    elif req.modo == "agregar" and req.solicitud_id and req.texto:
         args = ["--agregar-busqueda", req.solicitud_id, "--texto", req.texto]
     else:
-        return {"status": "error", "mensaje": "Modo no reconocido"}
+        return {"status": "error", "mensaje": "Parámetros inválidos"}
 
     ejecutar_en_background(args)
-    return {"status": "ok", "mensaje": f"RPA lanzado en background. Modo: {req.modo}"}
+    return {"status": "ok", "carpeta": str(BASE_DIR), "modo": req.modo}
