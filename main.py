@@ -438,6 +438,9 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
         print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
+        if not codigos_activos:
+            raise ValueError("No hay proveedores activos configurados para buscar.")
+
         matcher = Matcher(umbral_minimo=55.0)
 
         for item_id, solicitado in zip(item_ids, productos_solicitados):
@@ -553,6 +556,9 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
         print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
+        if not codigos_activos:
+            raise ValueError("No hay proveedores activos configurados para buscar.")
+
         matcher = Matcher(umbral_minimo=55.0)
 
         print(f"\n[3/3] Corriendo scrapers...")
@@ -657,6 +663,9 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
         print(f"\n[2/3] Corriendo scrapers para los renglones nuevos...")
         codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
         print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
+
+        if not codigos_activos:
+            raise ValueError("No hay proveedores activos configurados para buscar.")
 
         matcher = Matcher(umbral_minimo=55.0)
 
