@@ -2,11 +2,10 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 app = FastAPI(title="RPA Cotizador API")
-
-# Toma la ruta exacta de la carpeta donde esté corriendo (Demo o Prod)
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -21,7 +20,8 @@ def ejecutar_en_background(args_lista: list[str]):
     DETACHED_PROCESS = 0x00000008
     subprocess.Popen(
         [sys.executable, "main.py"] + args_lista,
-        cwd=str(BASE_DIR),  # Obliga a main.py a leer el .env de SU carpeta
+        cwd=str(BASE_DIR),
+        env=os.environ.copy(),  # <--- Hereda exactamente el bloque env de PM2
         creationflags=DETACHED_PROCESS,
         close_fds=True,
     )
