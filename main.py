@@ -73,8 +73,8 @@ SCRAPERS_DISPONIBLES = {
     "compunomicos": CompunomicosScraper,  # este creo que lo que vi iba producto a producto
     "eurocomp": EurocompScraper,
     # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
-    #"cococo": CococoScraper,  # pagina rara
-    #"dataformas": DataformasScraper,  # pidio restablecer la contraseña
+    # "cococo": CococoScraper,  # pagina rara
+    # "dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,
 }
 
@@ -435,8 +435,8 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         db.actualizar_estado_solicitud(solicitud_id, "scrapeando")
         print(f"\n[2/3] Corriendo scrapers...")
 
-        codigos_activos = db.listar_proveedores_activos()
-        print(f"  Proveedores activos: {codigos_activos}")
+        codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
+        print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
         matcher = Matcher(umbral_minimo=55.0)
 
@@ -549,9 +549,9 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         intento_numero = db.siguiente_intento_numero(item_id)
         print(f"\n[2/3] Este será el intento #{intento_numero}")
 
-        # 6. Correr scrapers
-        codigos_activos = db.listar_proveedores_activos()
-        print(f"  Proveedores activos: {codigos_activos}")
+        # 6. Correr scrapers (según la preferencia del usuario de la solicitud)
+        codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
+        print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
         matcher = Matcher(umbral_minimo=55.0)
 
@@ -655,8 +655,8 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
 
         # Scrapers + matcher + persistencia para cada item nuevo
         print(f"\n[2/3] Corriendo scrapers para los renglones nuevos...")
-        codigos_activos = db.listar_proveedores_activos()
-        print(f"  Proveedores activos: {codigos_activos}")
+        codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
+        print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
         matcher = Matcher(umbral_minimo=55.0)
 

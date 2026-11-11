@@ -55,13 +55,61 @@ def get_conn():
 # =====================================================================
 def listar_proveedores_activos() -> list[str]:
     """
-    Devuelve los códigos de proveedores marcados como activos en la DB.
-    Esta es la fuente de verdad para saber qué scrapers correr.
-    El frontend puede activar/desactivar cambiando el campo `activo`.
+    (LEGACY) Códigos de proveedores globalmente activos.
+    Se conserva para el modo CLI y como fallback. El flujo normal ahora usa
+    listar_proveedores_para_solicitud(), que respeta la preferencia por usuario.
     """
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT codigo FROM proveedores WHERE activo = true ORDER BY codigo"
+        ).fetchall()
+    return [r["codigo"] for r in rows]
+
+
+def listar_proveedores_para_solicitud(solicitud_id: str) -> list[str]:
+    """
+    Proveedores que se deben buscar para ESTA solicitud, según la preferencia
+    del usuario que la creó.
+
+    Regla: TODOS los proveedores del catálogo MENOS los que ese usuario apagó
+    en preferencias_proveedor_usuario. (El campo global `activo` ya no decide:
+    la configuración es 100% por usuario.)
+
+    Si la solicitud no tiene usuario_creador_id (modo CLI o cron), devuelve
+    todos los proveedores sin exclusión.
+
+    Nota: los scrapers con captcha/MFA (intelec, intcomex, etc.) igual se
+    descartan en main.py porque no están en SCRAPERS_DISPONIBLES. Esta función
+    solo decide la preferencia; el código decide qué está implementado.
+    """
+    with get_conn() as conn:
+        sol = conn.execute(
+            "SELECT usuario_creador_id FROM solicitudes WHERE id = %s",
+            (solicitud_id,),
+        ).fetchone()
+
+        usuario_id = sol["usuario_creador_id"] if sol else None
+
+        # Sin usuario (CLI/cron) → todos los proveedores, sin exclusión.
+        if usuario_id is None:
+            rows = conn.execute(
+                "SELECT codigo FROM proveedores ORDER BY codigo"
+            ).fetchall()
+            return [r["codigo"] for r in rows]
+
+        # Con usuario → todos menos los que apagó.
+        rows = conn.execute(
+            """
+            SELECT p.codigo
+            FROM proveedores p
+            WHERE p.codigo NOT IN (
+                SELECT pref.proveedor_codigo
+                FROM preferencias_proveedor_usuario pref
+                WHERE pref.usuario_id = %s
+            )
+            ORDER BY p.codigo
+            """,
+            (usuario_id,),
         ).fetchall()
     return [r["codigo"] for r in rows]
 
