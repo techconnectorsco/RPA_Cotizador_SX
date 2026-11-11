@@ -16,8 +16,7 @@ Mejoras v2.1 (consistencia solicitud vs proveedor):
   7. Busqueda por palabra completa (evita que "lg" haga match en "pulgadas").
   8. Query sin palabras duplicadas y bonus que respeta marcas cortas (LG, HP)
      y numeros (16, 24, 27).
-  9. Productos SIN precio visible van siempre a tier DUDOSO (score tope 50)
-     y al final de la lista. NO se descartan: se guardan en la DB igual.
+  9. Productos SIN precio visible se descartan y no se guardan en la DB.
 """
 
 from __future__ import annotations
@@ -182,10 +181,6 @@ TIER_SIMILAR = "similar"  # 55 - 69
 TIER_DUDOSO = "dudoso"  # < 55
 
 
-# Score maximo para un producto sin precio visible (queda en rango dudoso)
-SCORE_MAX_SIN_PRECIO = 50.0
-
-
 def sin_precio_visible(producto: ProductoEncontrado) -> bool:
     """True si el proveedor no mostro un precio utilizable (None, 0 o invalido)."""
     precio = producto.precio
@@ -319,6 +314,17 @@ class Matcher:
                         razon_descarte=f"contiene '{palabra}' (blacklist {cat_key})",
                     )
 
+        if sin_precio_visible(candidato):
+            return ResultadoMatch(
+                producto=candidato,
+                score_total=0.0,
+                score_texto=0.0,
+                score_marca=0.0,
+                score_specs=0.0,
+                descartado=True,
+                razon_descarte="sin_precio_visible",
+            )
+
         # ---- Score textual (mejorado) ----
         query = self._componer_query(solicitado)
         score_texto = self._score_textual(query, nombre_cand)
@@ -352,14 +358,6 @@ class Matcher:
             0.0, min(100.0, score_base + ajuste_var + bonus_identidad + bonus_contenida)
         )
         tier = clasificar_tier(score_total)
-
-        # ---- Regla de precio: sin precio visible -> siempre DUDOSO ----
-        # Lo que interesa es cotizar, asi que aunque el producto coincida al
-        # 100% no puede salir como exacto/bueno/similar sin precio. NO se
-        # descarta: se guarda en la DB y la UI ya muestra "sin precio visible".
-        if sin_precio_visible(candidato):
-            score_total = min(score_total, SCORE_MAX_SIN_PRECIO)
-            tier = TIER_DUDOSO
 
         return ResultadoMatch(
             producto=candidato,

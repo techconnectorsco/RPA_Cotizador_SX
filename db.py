@@ -391,7 +391,9 @@ def guardar_productos_encontrados(
             match = p.get("match", {})
             tier = match.get("tier")
 
-            # Filtro: solo guardar los tiers permitidos y no descartados
+            # Solo guardar productos cotizables, con tier permitido y no descartados.
+            if p.get("precio") is None or p["precio"] <= 0:
+                continue
             if match.get("descartado"):
                 continue
             if tier not in tiers_a_guardar:

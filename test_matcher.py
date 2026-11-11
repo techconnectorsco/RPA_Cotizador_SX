@@ -152,18 +152,19 @@ def test_almacenamiento_en_tb():
 
 
 # ---------------------------------------------------------------------
-# Sin precio visible -> siempre DUDOSO, pero NUNCA descartado
+# Sin precio visible -> descartado
 # ---------------------------------------------------------------------
 def test_sin_precio_none_es_dudoso():
     r = _match(MONITOR_LG_16, "MONITOR LG 16 PULGADAS IPS", precio=None)
     assert r.tier == "dudoso", r.tier
     assert r.score_total <= 50.0
-    assert not r.descartado  # se guarda en DB
+    assert r.descartado
+    assert r.razon_descarte == "sin_precio_visible"
 
 
 def test_precio_cero_es_dudoso():
     r = _match(MONITOR_LG_16, "MONITOR LG 16 PULGADAS IPS", precio=0.0)
-    assert r.tier == "dudoso" and not r.descartado
+    assert r.tier == "dudoso" and r.descartado
 
 
 def test_con_precio_sigue_exacto():
@@ -186,8 +187,59 @@ def test_sin_precio_queda_al_final():
     res = m.calcular_todos(MONITOR_LG_16, cands)
     assert res[-1].producto.precio is None
     assert res[0].producto.precio == 150000.0
-    # Pasa por el mismo filtro que main.py/db.py: dudoso se guarda
-    assert all(not r.descartado for r in res)
+    # Sin precio se descarta; los productos cotizables se conservan
+    assert res[-1].descartado
+    assert all(not r.descartado for r in res[:-1])
+
+
+import unittest
+from unittest.mock import patch
+import db
+from matcher import Matcher, _normalizar
+from modelo import ProductoSolicitado, ProductoEncontrado
+
+class MatcherTests(unittest.TestCase):
+    def test_regresiones(self):
+        m = Matcher()
+        pedido = ProductoSolicitado(categoria='monitor', marca='LG', specs={'pantalla_pulgadas': 16}, query_sugerida='monitor 16 pulgadas LG')
+        for nombre, descripcion in [('MONITOR LG 16MR70 16 pulg', None), ('MONITOR LG 16.0" WQXGA', None), ('MONITOR LG 16MR70 16" IPS', None), ('MONITOR PORTATIL 16MR70', 'LG 16 pulgadas')]:
+            with self.subTest(nombre=nombre):
+                c = ProductoEncontrado('test', nombre, '', precio=100, descripcion_corta=descripcion)
+                self.assertEqual(m._calcular_uno(pedido, c).tier, 'exacto')
+        c = ProductoEncontrado('test', 'MONITOR SAMSUNG 16 pulgadas', '', precio=100)
+        self.assertEqual(m._calcular_uno(pedido, c).score_marca, 0)
+        for precio in [None, 0, -1]:
+            c = ProductoEncontrado('test', 'MONITOR LG 16 pulgadas', '', precio=precio)
+            r = m._calcular_uno(pedido, c)
+            self.assertEqual(r.tier, 'dudoso')
+            self.assertEqual(r.score_total, 0)
+            self.assertTrue(r.descartado)
+            self.assertEqual(r.razon_descarte, "sin_precio_visible")
+            self.assertEqual(m.filtrar_por_umbral([r]), [])
+        for unidad in ['16"', "16''", '16 pulg', '16-inch', '16.0”']:
+            self.assertEqual(_normalizar(unidad), '16 pulgadas')
+        self.assertEqual(_normalizar('1 TB'), '1tb')
+        self.assertEqual(_normalizar('16-gb'), '16gb')
+
+    def test_persistencia_sin_precio(self):
+        for precio in [None, 0, -1]:
+            with self.subTest(precio=precio), patch.object(db, 'get_conn') as conexion:
+                conn = conexion.return_value.__enter__.return_value
+                producto = {'precio': precio, 'match': {'tier': 'exacto', 'descartado': False}}
+                self.assertEqual(db.guardar_productos_encontrados('item', 'ejecucion', [producto]), 0)
+                conn.execute.assert_not_called()
+
+    def test_persistencia_precio_positivo(self):
+        producto = ProductoEncontrado('test', 'Monitor', '', precio=100).to_dict()
+        producto['match'] = {'tier': 'exacto', 'descartado': False}
+        with patch.object(db, 'get_conn') as conexion:
+            self.assertEqual(db.guardar_productos_encontrados('item', 'ejecucion', [producto]), 1)
+            conexion.return_value.__enter__.return_value.execute.assert_called_once()
+
+    def test_blacklist_tiene_prioridad(self):
+        r = Matcher()._calcular_uno(ProductoSolicitado(categoria='monitor'), ProductoEncontrado('test', 'cable monitor', '', precio=None))
+        self.assertTrue(r.descartado)
+        self.assertIn('blacklist', r.razon_descarte)
 
 
 if __name__ == "__main__":
@@ -201,4 +253,6 @@ if __name__ == "__main__":
             fallos += 1
             print(f"  FALLO {nombre}: {e}")
     print(f"\n{len(pruebas) - fallos}/{len(pruebas)} pruebas OK")
-    raise SystemExit(1 if fallos else 0)
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(MatcherTests)
+    resultado = unittest.TextTestRunner().run(suite)
+    raise SystemExit(1 if fallos or not resultado.wasSuccessful() else 0)
