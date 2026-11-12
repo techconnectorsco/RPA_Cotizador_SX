@@ -177,31 +177,27 @@ def actualizar_estado_solicitud(
     solicitud_id: str,
     estado: str,
     error_mensaje: str | None = None,
+    mensaje_progreso: str | None = None,
 ) -> None:
-    """
-    Cambia el estado. También setea timestamps según el estado.
-    Estados: pendiente, normalizando, scrapeando, lista, error, cerrada
-    """
-    # Mapear estado → campo timestamp a actualizar
     ts_field_map = {
         "normalizando": "normalizado_en",
-        "scrapeando": None,  # el timestamp scrapeado_en se pone al final
+        "scrapeando": None,
         "lista": "scrapeado_en",
         "cerrada": "cerrado_en",
     }
     ts_field = ts_field_map.get(estado)
+    extra_ts = f", {ts_field} = now()" if ts_field else ""
 
-    if ts_field:
-        sql = f"""UPDATE solicitudes
-                  SET estado = %s, error_mensaje = %s, {ts_field} = now()
-                  WHERE id = %s"""
-    else:
-        sql = """UPDATE solicitudes
-                 SET estado = %s, error_mensaje = %s
-                 WHERE id = %s"""
-
+    sql = f"""
+        UPDATE solicitudes
+        SET estado = %s,
+            error_mensaje = %s,
+            mensaje_progreso = COALESCE(%s, mensaje_progreso)
+            {extra_ts}
+        WHERE id = %s
+    """
     with get_conn() as conn:
-        conn.execute(sql, (estado, error_mensaje, solicitud_id))
+        conn.execute(sql, (estado, error_mensaje, mensaje_progreso, solicitud_id))
 
 
 def guardar_interpretacion_ia(

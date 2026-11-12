@@ -380,7 +380,11 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
 
     try:
         # ---- FASE 1: IA ----
-        db.actualizar_estado_solicitud(solicitud_id, "normalizando")
+        db.actualizar_estado_solicitud(
+            solicitud_id,
+            "normalizando",
+            mensaje_progreso="Interpretando producto(s) con IA...",
+        )
         print("\n[1/3] Interpretando con IA...")
 
         productos_solicitados = interpretar_solicitud(texto_original)
@@ -432,7 +436,11 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         )
 
         # ---- FASE 2 y 3: Scrapers + Matcher + persistencia ----
-        db.actualizar_estado_solicitud(solicitud_id, "scrapeando")
+        db.actualizar_estado_solicitud(
+            solicitud_id,
+            "scrapeando",
+            mensaje_progreso=f"Consultando {len(codigos_activos)} proveedores para {len(productos_solicitados)} producto(s)...",
+        )
         print(f"\n[2/3] Corriendo scrapers...")
 
         codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
@@ -453,7 +461,9 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
             )
 
         # ---- Cierre ----
-        db.actualizar_estado_solicitud(solicitud_id, "lista")
+        db.actualizar_estado_solicitud(
+            solicitud_id, "lista", mensaje_progreso="Búsqueda completada"
+        )
 
         # Resumen final desde DB
         r = db.resumen_solicitud(solicitud_id)
@@ -510,7 +520,11 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
 
     try:
         # 2. Marcar solicitud como scrapeando (para el polling del frontend)
-        db.actualizar_estado_solicitud(solicitud_id, "scrapeando")
+        db.actualizar_estado_solicitud(
+            solicitud_id,
+            "scrapeando",
+            mensaje_progreso="Reintentando búsqueda con nuevo texto...",
+        )
 
         # 3. Guardar el texto libre que el vendedor escribió
         db.guardar_texto_reinterpretacion(item_id, nuevo_texto)
@@ -574,7 +588,9 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         db.actualizar_intento_actual(item_id, intento_numero)
 
         # 8. Cerrar solicitud
-        db.actualizar_estado_solicitud(solicitud_id, "lista")
+        db.actualizar_estado_solicitud(
+            solicitud_id, "lista", mensaje_progreso="Reintento completado"
+        )
 
         resumen["intento_numero"] = intento_numero
 
@@ -620,7 +636,11 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
 
     try:
         # Marcar scrapeando (para que el polling del frontend despierte)
-        db.actualizar_estado_solicitud(solicitud_id, "scrapeando")
+        db.actualizar_estado_solicitud(
+            solicitud_id,
+            "scrapeando",
+            mensaje_progreso="Agregando producto y buscando en proveedores...",
+        )
 
         # Interpretar con IA
         print("\n[1/3] Interpretando con IA...")
@@ -679,7 +699,9 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
             )
 
         # Cerrar
-        db.actualizar_estado_solicitud(solicitud_id, "lista")
+        db.actualizar_estado_solicitud(
+            solicitud_id, "lista", mensaje_progreso="Producto agregado"
+        )
 
         print(f"\n{'='*70}")
         print(f"BÚSQUEDA AGREGADA — {len(item_ids)} renglón(es) nuevo(s)")
