@@ -38,6 +38,7 @@ Flujo interno (modo 3 — reintento):
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 import time
@@ -230,6 +231,7 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
 
     inicio = time.perf_counter()
     buffer = io.StringIO()
+    resultado: ResultadoScraper | None = None
 
     try:
         with redirect_stdout(buffer):
@@ -436,14 +438,14 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         )
 
         # ---- FASE 2 y 3: Scrapers + Matcher + persistencia ----
+        codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
+
         db.actualizar_estado_solicitud(
             solicitud_id,
             "scrapeando",
             mensaje_progreso=f"Consultando {len(codigos_activos)} proveedores para {len(productos_solicitados)} producto(s)...",
         )
         print(f"\n[2/3] Corriendo scrapers...")
-
-        codigos_activos = db.listar_proveedores_para_solicitud(solicitud_id)
         print(f"  Proveedores (según preferencia del usuario): {codigos_activos}")
 
         if not codigos_activos:
