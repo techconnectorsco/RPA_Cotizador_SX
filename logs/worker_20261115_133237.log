@@ -1,0 +1,38 @@
+======================================================================
+INICIO RPA — 2026-11-15T13:32:37
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_133237.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:17644
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+======================================================================
+TRABAJO 624b376e-bbb9-4092-ba6a-eeb79bb53ba9  [reintento]  intento 1/2
+SOLICITUD db6892e4-e515-449d-9dae-eba7e5c3d011
+TEXTO: calculadora
+======================================================================
+
+[1/2] Reinterpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+  ✓ Interpretado: [calculadora]    — query: 'calculadora electronica'
+  Proveedores: ['amazon', 'bpc', 'eurocomp', 'intcomex', 'intelec']
+
+[2/2] Corriendo scrapers — intento #2...
+
+  → Item 32ac5cd3-4fa5-4160-8aac-abadc4560deb  (intento #2)  query: 'calculadora electronica'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 3 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+  ✓ 0 productos (4914 ms)
+  [amazon] No aparecieron productos
+  [amazon] HTML guardado en debug\amazon_SIN_RESULTADOS_calculadora_electronica.html
+  ✓ 0 productos (11827 ms)
+  [eurocomp] Buscando: calculadora electronica
+⚠ [eurocomp] ERROR: Page.wait_for_function: Timeout 30000ms exceeded.

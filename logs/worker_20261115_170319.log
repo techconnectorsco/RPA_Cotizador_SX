@@ -1,0 +1,241 @@
+======================================================================
+INICIO RPA — 2026-11-15T17:03:19
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_170319.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:19196
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+======================================================================
+TRABAJO 6ba6c88b-e2fb-442b-b7b1-e0d1e2a20246  [buscar]  intento 1/2
+SOLICITUD b71ad5d1-dab1-4fc9-8d9c-2c4c61ca301a
+TEXTO: laptop dell 16gb de ram
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    1. [laptop] Dell   — query: 'laptop dell 16gb ram' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item df96d5ce-5954-426c-a35c-3829c7fa747d  (intento #1)  query: 'laptop dell 16gb ram'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 3 scrapers en paralelo (máx 3 a la vez)...
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=laptop+dell+16gb+ram
+  [bpc] Productos obtenidos: 12
+  ✓ 12 productos (6065 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: laptop dell 16gb ram
+  [eurocomp] Procesando 3 productos
+  ✓ 3 productos (2187 ms)
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=laptop+dell+16gb+ram
+  [amazon] 16 productos detectados
+  ✓ 16 productos (31730 ms)
+    [bpc] 12 crudos → guardados 0 (exacto:0 bueno:0 similar:0 dudoso:0)
+      ↳ 12 no llegaron a la pantalla: 12 sin_precio_visible
+         · [sin_precio_visible] DELL PRO BLACK 14 ULTRA...
+         · [sin_precio_visible] HP PROBOOK 4 14 G1i...
+         · [sin_precio_visible] HP ELITEBOOK 8 G1i 14...
+    [eurocomp] 3 crudos → guardados 3 (exacto:2 bueno:1 similar:0 dudoso:0)
+    [amazon] 16 crudos → guardados 3 (exacto:3 bueno:0 similar:0 dudoso:0)
+      ↳ 13 no llegaron a la pantalla: 13 sin_precio_visible
+         · [sin_precio_visible] Dell Computadora portátil 15.6, FHD, Intel Core Ultra 5 225U, 16 GB de
+         · [sin_precio_visible] Dell Latitude 5420 Computadora portátil de negocios FHD de 14 pulgadas
+         · [sin_precio_visible] Laptop Dell Inspiron 15 3530 con pantalla táctil, 15.6 pulgadas FHD LE
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 39.3s
+  Estado de la solicitud: scrapeando
+
+======================================================================
+TRABAJO c233856d-e5c1-40cc-b07d-c271cd88bb3d  [buscar]  intento 1/2
+SOLICITUD b71ad5d1-dab1-4fc9-8d9c-2c4c61ca301a
+TEXTO: disco duro externo 1tb
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+    1. [disco duro externo]    — query: 'disco duro externo 1tb' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item a1527b17-8902-4e9c-84ab-5ef95c29c38c  (intento #1)  query: 'disco duro externo 1tb'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 3 scrapers en paralelo (máx 3 a la vez)...
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=disco+duro+externo+1tb
+  [bpc] Productos obtenidos: 0
+  ✓ 0 productos (3953 ms)
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=disco+duro+externo+1tb
+  [amazon] 16 productos detectados
+  ✓ 16 productos (31363 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: disco duro externo 1tb
+⚠ [eurocomp] ERROR: Page.wait_for_function: Timeout 30000ms exceeded.
+  ✗ Fallo (31487 ms): TimeoutError: Page.wait_for_function: Timeout 30000ms exceeded.
+Traceback (most recent call last):
+ 
+    [bpc] 0 crudos — el scraper no encontró nada
+    [amazon] 16 crudos → guardados 14 (exacto:8 bueno:0 similar:6 dudoso:0)
+      ↳ 2 no llegaron a la pantalla: 2 sin_precio_visible
+         · [sin_precio_visible] Mini disco disco duro portátil LaCie Rugged USB 3.0
+         · [sin_precio_visible] Seagate - Concentrador de Game Drive, disco duro externo de 8 TB, Desk
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 43.4s
+  Estado de la solicitud: lista
+
+======================================================================
+TRABAJO 61e7c1e9-35e1-4b58-81b3-d070d8b7bafe  [buscar]  intento 1/2
+SOLICITUD 934a690e-f2f4-4345-acc7-84ba7fbfc947
+TEXTO: memoria ram ddr4
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+    1. [memoria ram]    — query: 'memoria ram ddr4' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item 16a46f7c-32fc-449f-a6de-24b527f96461  (intento #1)  query: 'memoria ram ddr4'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['cococo', 'dataformas', 'intcomex', 'intelec']
+  Corriendo 5 scrapers en paralelo (máx 3 a la vez)...
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=memoria+ram+ddr4
+⚠ [bpc] ERROR: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://www.mayoristabpc.com/busqueda?s=memoria+ram+ddr4", waiting until "domcontentloaded"
+
+  ✗ Fallo (30940 ms): TimeoutError: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://www.mayorist
+
+▶ compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=memoria+ram+ddr4&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  ✓ 0 productos (2355 ms)
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=memoria+ram+ddr4
+  [amazon] 16 productos detectados
+  ✓ 16 productos (36536 ms)
+
+▶ cdc
+  [cdc] Advertencia al iniciar sesión: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://cdcinternacional.com/", waiting until "domcontentloaded"
+
+  [cdc] Buscando: 'memoria ram ddr4'
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  ✓ 0 productos (31365 ms)
+
+▶ eurocomp
+⚠ [eurocomp] ERROR: No fue posible iniciar sesión en Eurocomp
+  ✗ Fallo (0 ms): RuntimeError: No fue posible iniciar sesión en Eurocomp
+Traceback (most recent call last):
+  File "D
+    [compunomicos] 0 crudos — el scraper no encontró nada
+    [amazon] 16 crudos → guardados 12 (exacto:12 bueno:0 similar:0 dudoso:0)
+      ↳ 4 no llegaron a la pantalla: 4 sin_precio_visible
+         · [sin_precio_visible] CORSAIR Vengeance LPX DDR4 RAM 32 GB (2 x 16 GB) hasta 3200 MHz CL16-2
+         · [sin_precio_visible] TEAMGROUP T-Force Vulcan Z DDR4 DRAM 16GB Kit (2x8GB) 3200MHz Módulo d
+         · [sin_precio_visible] G.SKILL RipjawsV Series DDR4 RAM (XMP) 16GB (2x8GB) Hasta 3200MT/s* CL
+    [cdc] 0 crudos — el scraper no encontró nada
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 81.5s
+  Estado de la solicitud: scrapeando
+
+======================================================================
+TRABAJO 937c2a00-0a4c-44cc-b9d2-3df221d8d109  [buscar]  intento 1/2
+SOLICITUD 934a690e-f2f4-4345-acc7-84ba7fbfc947
+TEXTO: computadora de escritorio de 512gb y 16gb memoria ram
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+    1. [computadora de escritorio]    — query: 'computadora escritorio 512gb 16gb memoria ram' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item ce185647-9b55-442f-b9b3-2de195bc03c2  (intento #1)  query: 'computadora escritorio 512gb 16gb memoria ram'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['cococo', 'dataformas', 'intcomex', 'intelec']
+  Corriendo 5 scrapers en paralelo (máx 3 a la vez)...
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=computadora+escritorio+512gb+16gb+memoria+ram
+⚠ [bpc] ERROR: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://www.mayoristabpc.com/busqueda?s=computadora+escritorio+512gb+16gb+memoria+ram", waiting until "domcontentloaded"
+
+  ✗ Fallo (31616 ms): TimeoutError: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://www.mayorist
+
+▶ compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=computadora+escritorio+512gb+16gb+memoria+ram&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  ✓ 0 productos (1999 ms)
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=computadora+escritorio+512gb+16gb+memoria+ram
+  [amazon] networkidle no llegó en 6s, continuamos
+  [amazon] 16 productos detectados
+  ✓ 16 productos (41358 ms)
+
+▶ cdc
+  [cdc] Advertencia al iniciar sesión: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "https://cdcinternacional.com/", waiting until "domcontentloaded"
+
+  [cdc] Buscando: 'computadora escritorio 512gb 16gb memoria ram'
+⚠ [cdc] ERROR: Page.fill: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#ed")
+
+  ✗ Fallo (30121 ms): TimeoutError: Page.fill: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#ed")
+
+Traceba
+
+▶ eurocomp
+⚠ [eurocomp] ERROR: No fue posible iniciar sesión en Eurocomp
+  ✗ Fallo (0 ms): RuntimeError: No fue posible iniciar sesión en Eurocomp
+Traceback (most recent call last):
+  File "D
+    [compunomicos] 0 crudos — el scraper no encontró nada
+    [amazon] 16 crudos → guardados 9 (exacto:5 bueno:3 similar:0 dudoso:1)
+      ↳ 7 no llegaron a la pantalla: 7 sin_precio_visible
+         · [sin_precio_visible] HP PC de escritorio Business Tower, procesador Intel i5, 16 GB de RAM
+         · [sin_precio_visible] Dell 24 computadoras de escritorio todo en uno, Intel Ultra 7 355, 64 
+         · [sin_precio_visible] Dell Computadora de escritorio Pro Micro Intel Core Ultra5 235T, hasta
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 128.7s
+  Estado de la solicitud: lista
+
+⏹ Señal 2 recibida. Termino el trabajo en curso y salgo.
+Worker detenido limpiamente.

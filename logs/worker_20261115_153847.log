@@ -1,0 +1,35 @@
+======================================================================
+INICIO RPA — 2026-11-15T15:38:47
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_153847.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:14428
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+======================================================================
+TRABAJO 945f4a84-6ad4-477c-8e83-d9c8a98442fa  [buscar]  intento 1/2
+SOLICITUD 7c8ea115-fe14-4b1f-b484-c64baba4f5b0
+TEXTO: monitor LG de 16 pulgadas
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    1. [monitor] LG   — query: 'monitor LG 16 pulgadas' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item 2c7340c1-ce7f-4b39-9fc9-7d4d8904c02f  (intento #1)  query: 'monitor LG 16 pulgadas'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['intcomex', 'intelec']
+  Corriendo 3 scrapers en paralelo (máx 3 a la vez)...
+
+▶ amazon
+
+▶ bpc
+  ✓ 20 productos (8573 ms)
+  ✓ 16 productos (29488 ms)
+⚠ [eurocomp] ERROR: Page.wait_for_function: Timeout 30000ms exceeded.

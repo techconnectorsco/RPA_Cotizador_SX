@@ -1,22 +1,46 @@
 """
-Modulo de matching v2.
+Modulo de matching v3.
 
-Mejoras vs v1:
-  1. Score textual combinado (token_set + token_sort + partial) con
-     penalizacion cuando la query es muy corta.
-  2. Bonus/penalizaciones por "variantes" (COMBO, USADA, RECERTIFICADA...).
-  3. Defaults neutrales ajustados de 50 -> 70 (evita empates masivos).
-  4. Clasificacion en TIERS (exacto/bueno/similar/dudoso) para la UI.
+QUE CAMBIA RESPECTO A v2, Y POR QUE
+───────────────────────────────────
+v2 puntuaba con similitud difusa (RapidFuzz: token_set + token_sort + partial).
+El problema practico: token_sort_ratio pregunta "¿la query y el nombre del
+producto son la misma frase?", y en un catalogo real NUNCA lo son — el vendedor
+escribe 3 o 4 palabras y el producto se llama con 12. Esa metrica arrastraba el
+40% del score y hundia justamente a los productos buenos, que son los que traen
+las specs en el titulo.
 
-Mejoras v2.1 (consistencia solicitud vs proveedor):
-  5. Marca, specs y bonus se evaluan sobre nombre + descripcion_corta +
-     specs del proveedor (antes solo el nombre).
-  6. Normalizacion de unidades: 16" / 16'' / 16 pulg / 16-inch / 16.0"
-     -> "16 pulgadas"; 16 GB / 16-gb -> "16gb"; tildes eliminadas.
-  7. Busqueda por palabra completa (evita que "lg" haga match en "pulgadas").
-  8. Query sin palabras duplicadas y bonus que respeta marcas cortas (LG, HP)
-     y numeros (16, 24, 27).
-  9. Productos SIN precio visible se descartan y no se guardan en la DB.
+Caso real que motivo esta reescritura: se busco "Monitor LG 16 pulgadas" y el
+monitor LG de 16 pulgadas aparecio en el grupo "dudoso", con su nombre diciendo
+exactamente lo que se habia buscado.
+
+v3 reemplaza el fuzzy por COBERTURA DE PALABRAS: de las palabras que escribio el
+vendedor, cuantas aparecen en el producto. "Monitor LG 16 pulgadas" contra
+"Monitor LG 16MR70-B 16 pulgadas IPS" son 4 de 4 = 100%. Es la misma cuenta que
+haria un humano mirando la pantalla, y por eso se puede defender frente a un
+cliente.
+
+Las otras tres decisiones de v3:
+
+  1. Busqueda generica (una sola palabra, sin marca ni modelo): el matcher NO
+     clasifica. El buscador del proveedor ya decidio que es relevante; pisarlo
+     con un score inventado solo degrada resultados validos.
+  2. Sinonimos español-ingles para categorias comunes. Era lo que hundia a
+     Amazon, que titula "Wireless Earbuds" cuando se busco "audifonos".
+  3. El orden del proveedor se respeta dentro de cada grupo, restando una
+     fraccion minima al score segun la posicion en que vino el producto. Asi no
+     hace falta tocar el esquema de la base ni el frontend.
+
+Se mantiene de v2, porque funcionaba bien:
+  - Normalizacion de unidades (16" / 16'' / 16 pulg / 16-inch -> "16 pulgadas").
+  - Blacklist por categoria (no mostrar cartuchos cuando se pide una impresora).
+  - Penalizacion de variantes (COMBO, USADA, RECERTIFICADA...).
+  - Descarte de productos sin precio visible: sin precio no se puede cotizar.
+  - Los cuatro valores del enum tier_match, para no requerir migracion.
+
+La interfaz publica no cambia: Matcher(umbral_minimo), calcular_todos(),
+ResultadoMatch.to_dict() con la misma estructura. main.py, worker.py y db.py
+siguen funcionando sin tocarse.
 """
 
 from __future__ import annotations
@@ -29,7 +53,6 @@ from typing import Any
 from rapidfuzz import fuzz
 
 from modelo import ProductoEncontrado, ProductoSolicitado
-
 
 # ---------------------------------------------------------------------
 # NORMALIZACION de texto (se aplica igual a solicitud y a candidato)
@@ -93,6 +116,330 @@ def _texto_candidato(candidato: ProductoEncontrado) -> str:
 
 
 # ---------------------------------------------------------------------
+# PALABRAS QUE NO APORTAN A LA BUSQUEDA
+# El vendedor escribe en lenguaje natural ("me gustaria encontrar una laptop
+# hp"). Estas palabras no identifican nada y, si entran al conteo de cobertura,
+# bajan el porcentaje de productos que SI son correctos.
+# ---------------------------------------------------------------------
+STOPWORDS = {
+    # articulos, preposiciones, conectores
+    "de",
+    "del",
+    "la",
+    "el",
+    "lo",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "los",
+    "las",
+    "y",
+    "o",
+    "con",
+    "sin",
+    "para",
+    "por",
+    "en",
+    "a",
+    "al",
+    "que",
+    "su",
+    "sus",
+    # pronombres y formas verbales de cortesia
+    "me",
+    "mi",
+    "mis",
+    "te",
+    "tu",
+    "tus",
+    "se",
+    "nos",
+    "le",
+    "les",
+    "yo",
+    "usted",
+    "ustedes",
+    "ser",
+    "sea",
+    "hay",
+    "tiene",
+    "tienen",
+    "tengo",
+    "tengan",
+    "ocupo",
+    "ocupamos",
+    "podrian",
+    "podria",
+    "puedes",
+    "pueden",
+    # verbos y formulas de pedido
+    "necesito",
+    "necesitamos",
+    "quiero",
+    "queremos",
+    "busco",
+    "buscamos",
+    "buscar",
+    "encontrar",
+    "conseguir",
+    "cotizar",
+    "cotizacion",
+    "cotizame",
+    "gustaria",
+    "gustaría",
+    "requiero",
+    "requerimos",
+    "solicito",
+    "mandame",
+    "enviame",
+    "pasame",
+    "precio",
+    "precios",
+    "favor",
+    "porfavor",
+    "porfa",
+    "hola",
+    "buenas",
+    "dias",
+    "tardes",
+    "gracias",
+    "urgente",
+    # unidades de pedido
+    "unidad",
+    "unidades",
+    "pieza",
+    "piezas",
+    "cantidad",
+    "cliente",
+}
+
+
+# ---------------------------------------------------------------------
+# SINONIMOS DE CATEGORIA (español <-> ingles y variantes regionales)
+#
+# Para que sirve: varios proveedores (Amazon sobre todo) titulan en ingles.
+# Sin esto, buscar "audifonos" contra "Wireless Earbuds Bluetooth" da cobertura
+# cero y el producto correcto termina en el ultimo grupo. Un termino cuenta como
+# presente si el, o cualquiera de sus sinonimos, aparece en el producto.
+# ---------------------------------------------------------------------
+SINONIMOS: dict[str, set[str]] = {
+    "laptop": {"laptop", "notebook", "portatil", "computadora portatil", "ultrabook"},
+    "computadora": {"computadora", "computador", "pc", "desktop", "cpu", "torre"},
+    "monitor": {"monitor", "pantalla", "display", "screen"},
+    "audifonos": {
+        "audifonos",
+        "auriculares",
+        "headphones",
+        "headset",
+        "earbuds",
+        "earphones",
+        "cascos",
+        "audifono",
+    },
+    "parlante": {
+        "parlante",
+        "parlantes",
+        "bocina",
+        "bocinas",
+        "speaker",
+        "speakers",
+        "altavoz",
+        "altavoces",
+    },
+    "teclado": {"teclado", "keyboard"},
+    "mouse": {"mouse", "raton", "ratón"},
+    "impresora": {"impresora", "printer", "multifuncional", "multifuncion"},
+    "escaner": {"escaner", "scanner"},
+    # Eurocomp titula "HD SOLIDO EXTERNO 1TB", nunca "disco duro". Sin estos
+    # sinonimos, buscar "disco duro externo 1tb" daba cero en su buscador y los
+    # productos que si aparecian quedaban en 'similar' en vez de 'exacto'.
+    # "duro" va aca a proposito: suelto no significa nada, pero si el producto
+    # dice "HD" hay que darlo por cubierto.
+    "disco": {
+        "disco",
+        "duro",
+        "hd",
+        "hdd",
+        "unidad",
+        "almacenamiento",
+        "hard drive",
+        "drive",
+    },
+    # Separado de "disco" porque NO son lo mismo: pedir un SSD y recibir un
+    # HDD mecanico es un error, no un sinonimo.
+    "ssd": {"ssd", "solido", "nvme", "m.2", "estado solido"},
+    "memoria": {"memoria", "ram", "memory"},
+    "tableta": {"tableta", "tablet"},
+    "celular": {"celular", "telefono", "smartphone", "movil", "phone"},
+    "camara": {"camara", "camera", "webcam"},
+    "proyector": {"proyector", "projector", "videobeam"},
+    "bateria": {"bateria", "battery", "pila"},
+    "cargador": {"cargador", "charger", "adaptador de corriente"},
+    "calculadora": {"calculadora", "calculator"},
+    "silla": {"silla", "chair", "sillon"},
+    "switch": {"switch", "conmutador"},
+    "router": {"router", "enrutador"},
+    "ups": {"ups", "respaldo", "no break", "nobreak"},
+    "toner": {"toner", "cartucho", "tinta", "ink"},
+}
+
+# Indice inverso: cada termino apunta al conjunto completo de sus sinonimos.
+_INDICE_SINONIMOS: dict[str, set[str]] = {}
+for _grupo in SINONIMOS.values():
+    for _t in _grupo:
+        _INDICE_SINONIMOS.setdefault(_normalizar(_t), set()).update(
+            _normalizar(x) for x in _grupo
+        )
+
+
+def _variantes_de(termino: str) -> set[str]:
+    """El termino mas sus sinonimos conocidos (siempre incluye el original)."""
+    t = _normalizar(termino)
+    return _INDICE_SINONIMOS.get(t, set()) | {t}
+
+
+def limpiar_query(texto: str, max_palabras: int = 6) -> str:
+    """
+    Convierte lo que escribio el vendedor en la query que va al buscador del
+    proveedor: sin palabras vacias, sin repetir, y corta.
+
+    Por que existe: la IA venia escribiendo la query y le agregaba palabras que
+    el catalogo del proveedor no usa. "laptop" se volvia "laptop portatil" y
+    Eurocomp pasaba de devolver laptops a devolver parlantes; "calculadora" se
+    volvia "calculadora electronica" y Amazon devolvia cero. Los buscadores de
+    e-commerce funcionan con AND: cada palabra de mas achica el resultado.
+
+    La IA sigue siendo util — extrae marca, modelo y specs para el matcher —
+    pero la query la arma esta funcion, a partir del texto del vendedor y nada
+    mas.
+
+        "me gustaria un monitor LG de 16 pulgadas"  ->  "monitor lg 16 pulgadas"
+        "necesito 5 laptops HP para oficina"        ->  "laptops hp oficina"
+    """
+    palabras: list[str] = []
+    for tok in _normalizar(texto).split():
+        if tok in STOPWORDS:
+            continue
+        if len(tok) < 2 and not tok.isdigit():
+            continue
+        if tok in palabras:
+            continue
+        palabras.append(tok)
+        if len(palabras) >= max_palabras:
+            break
+    return " ".join(palabras) or texto.strip()[:120]
+
+
+def _clave_blacklist(categoria) -> str | None:
+    """
+    Resuelve qué entrada de BLACKLIST_CATEGORIA aplica a la categoría que
+    devolvió la IA.
+
+    Hace falta porque la IA no devuelve categorías de un catálogo cerrado: da
+    texto libre como "disco duro externo", "memoria ram" o "computadora de
+    escritorio". Con una búsqueda exacta por clave, la blacklist solo se
+    activaba para "laptop" y "monitor" — en todo lo demás no se filtraba ni un
+    accesorio, y por eso un "ADAPTADOR CONVERSOR USB-C A SATA PARA DISCO"
+    llegaba a la pantalla de alguien que pidió un disco duro.
+
+    Se busca la clave conocida más específica que aparezca dentro de la
+    categoría: "disco duro externo" resuelve a "disco".
+    """
+    if not categoria:
+        return None
+
+    cat = _normalizar(categoria)
+    if cat in BLACKLIST_CATEGORIA:
+        return cat
+
+    candidatas = [k for k in BLACKLIST_CATEGORIA if _contiene_palabra(k, cat)]
+    if not candidatas:
+        return None
+    # La más larga es la más específica ("disco duro" gana sobre "disco").
+    return max(candidatas, key=len)
+
+
+def variantes_query(texto: str, solicitado=None, max_variantes: int = 5) -> list[str]:
+    """
+    Genera la query completa y sus versiones mas cortas, de la mas especifica a
+    la mas general. Es la base de la BUSQUEDA EN CASCADA: si una query no trae
+    resultados en un proveedor, se reintenta con la siguiente.
+
+    Por que hace falta: los buscadores de e-commerce funcionan con AND, asi que
+    cada palabra achica el resultado. Casos medidos en este proyecto:
+
+        Eurocomp  "laptop"                 -> 20 productos
+        Eurocomp  "laptop dell 16gb ram"   ->  3 productos
+        Eurocomp  "disco duro externo 1tb" ->  0 productos
+
+    Con el vendedor esperando frente a un spinner esto no se podia hacer. Ahora
+    que la busqueda corre en segundo plano, se puede intentar tres o cuatro
+    veces por proveedor sin que nadie lo note.
+
+    `solicitado` es opcional: si se pasa un ProductoSolicitado, se aprovecha lo
+    que extrajo la IA para armar variantes inteligentes — marca mas modelo (lo
+    que mejor identifica un producto), categoria mas marca, categoria sola — en
+    lugar de solo recortar palabras del final.
+
+        variantes_query("monitor LG de 16 pulgadas", solicitado)
+        -> ['monitor lg 16 pulgadas', 'monitor lg 16', 'monitor lg', 'monitor']
+    """
+    completa = limpiar_query(texto)
+    if not completa:
+        return []
+
+    candidatas: list[str] = [completa]
+
+    if solicitado is not None:
+        marca = getattr(solicitado, "marca", None)
+        modelo = getattr(solicitado, "modelo", None)
+        categoria = getattr(solicitado, "categoria", None)
+
+        # El modelo es lo que identifica un producto de forma unica.
+        if modelo:
+            candidatas.append(limpiar_query(f"{marca or ''} {modelo}"))
+        if marca and categoria:
+            candidatas.append(limpiar_query(f"{categoria} {marca}"))
+        if categoria:
+            candidatas.append(limpiar_query(str(categoria)))
+
+    # Recortes desde el final, como red de seguridad cuando no hay extraccion.
+    tokens = completa.split()
+    while len(tokens) > 1:
+        tokens = tokens[:-1]
+        candidatas.append(" ".join(tokens))
+
+    # Sin repetidos, y de mas palabras a menos: ese es el orden de degradacion.
+    vistas: set[str] = set()
+    unicas: list[str] = []
+    for c in candidatas:
+        c = c.strip()
+        if c and c not in vistas:
+            vistas.add(c)
+            unicas.append(c)
+
+    unicas.sort(key=lambda q: -len(q.split()))
+    return unicas[:max_variantes]
+
+
+def _posicion_de(termino: str, texto: str) -> int | None:
+    """
+    Donde aparece `termino` (o un sinonimo) como palabra completa en `texto`.
+    None si no aparece. Se usa para decidir si una palabra de la blacklist
+    describe al producto o solo a un accesorio que lo acompaña.
+    """
+    mejor: int | None = None
+    for variante in _variantes_de(termino):
+        if not variante:
+            continue
+        m = re.search(rf"(?<![a-z0-9]){re.escape(variante)}(?![a-z0-9])", texto)
+        if m and (mejor is None or m.start() < mejor):
+            mejor = m.start()
+    return mejor
+
+
+# ---------------------------------------------------------------------
 # BLACKLIST por categoria: descarta accesorios cuando piden el producto
 # ---------------------------------------------------------------------
 BLACKLIST_CATEGORIA: dict[str, list[str]] = {
@@ -105,14 +452,37 @@ BLACKLIST_CATEGORIA: dict[str, list[str]] = {
         "cargador",
         "funda",
         "maleta",
+        "maletin",
         "mochila",
+        "bolso",
+        "estuche",
         "candado",
+        # Accesorios que salian primeros buscando "laptop" en Eurocomp:
+        # "SOPORTE PARA LAPTOP STAND NOVA" puntuaba 94 porque dice "laptop".
         "soporte",
+        "stand",
+        "base",
+        "cooler",
+        "enfriador",
+        "replicador",
+        # Componentes que se venden "para laptop" pero no son una laptop.
+        "memoria",
+        "ram",
+        "bateria",
+        "pila",
+        "disco",
+        "ssd",
+        "pantalla",
     ],
     "impresora": ["cartucho", "tinta", "toner", "papel", "rodillo"],
-    "mouse": ["mousepad", "pad para mouse", "alfombrilla"],
-    "monitor": ["soporte", "brazo", "cable", "adaptador"],
-    "teclado": ["teclas", "keycap", "cover", "funda"],
+    "mouse": ["mousepad", "pad para mouse", "alfombrilla", "receptor"],
+    "monitor": ["soporte", "brazo", "cable", "adaptador", "protector", "filtro"],
+    "teclado": ["teclas", "keycap", "cover", "funda", "protector"],
+    "computadora": ["cable", "adaptador", "funda", "limpiador"],
+    "disco": ["adaptador", "conversor", "case", "carcasa", "cable", "enclosure"],
+    "memoria": ["adaptador", "lector", "cable"],
+    "celular": ["funda", "protector", "vidrio", "cable", "cargador", "soporte"],
+    "tableta": ["funda", "protector", "vidrio", "cable", "soporte", "lapiz"],
 }
 
 
@@ -121,14 +491,14 @@ BLACKLIST_CATEGORIA: dict[str, list[str]] = {
 # Si el cliente NO las pidio, penalizamos.
 # ---------------------------------------------------------------------
 VARIANTES_NEGATIVAS: dict[str, float] = {
-    "combo": -15.0,  # bundle con accesorios
+    "combo": -15.0,
     "usado": -20.0,
     "usada": -20.0,
     "recertificado": -20.0,
     "recertificada": -20.0,
     "reacondicionado": -20.0,
     "reacondicionada": -20.0,
-    "abierto": -10.0,  # caja abierta
+    "abierto": -10.0,
     "abierta": -10.0,
     "demo": -10.0,
     "outlet": -10.0,
@@ -154,31 +524,27 @@ EQUIVALENCIAS_MARCA: dict[str, list[str]] = {
     "asus": ["asus", "asustek"],
     "acer": ["acer"],
     "lg": ["lg", "lg electronics"],
-}
-
-STOPWORDS = {
-    "de",
-    "la",
-    "el",
-    "un",
-    "una",
-    "los",
-    "las",
-    "y",
-    "con",
-    "para",
-    "por",
-    "en",
+    "lenovo": ["lenovo", "thinkpad", "ideapad"],
+    "dell": ["dell"],
+    "apple": ["apple", "mac"],
+    "samsung": ["samsung"],
+    "logitech": ["logitech", "logi"],
 }
 
 
 # ---------------------------------------------------------------------
-# TIERS para clasificar visualmente el match
+# TIERS
+#
+# Umbrales mas permisivos que en v2 (85/70/55). Con cobertura de palabras un
+# producto correcto llega naturalmente a 90+, y uno que comparte la categoria
+# pero no la marca ronda 45. Los nombres del enum se mantienen para no migrar;
+# en el UI conviene rotular 'dudoso' como "Otros resultados del proveedor", que
+# describe lo que es sin emitir un juicio que el producto no merece.
 # ---------------------------------------------------------------------
 TIER_EXACTO = "exacto"  # score >= 85
-TIER_BUENO = "bueno"  # 70 - 84
-TIER_SIMILAR = "similar"  # 55 - 69
-TIER_DUDOSO = "dudoso"  # < 55
+TIER_BUENO = "bueno"  # 65 - 84
+TIER_SIMILAR = "similar"  # 45 - 64
+TIER_DUDOSO = "dudoso"  # < 45
 
 
 def sin_precio_visible(producto: ProductoEncontrado) -> bool:
@@ -195,9 +561,9 @@ def sin_precio_visible(producto: ProductoEncontrado) -> bool:
 def clasificar_tier(score: float) -> str:
     if score >= 85:
         return TIER_EXACTO
-    if score >= 70:
+    if score >= 65:
         return TIER_BUENO
-    if score >= 55:
+    if score >= 45:
         return TIER_SIMILAR
     return TIER_DUDOSO
 
@@ -218,10 +584,19 @@ class ResultadoMatch:
     tier: str = TIER_DUDOSO
     descartado: bool = False
     razon_descarte: str | None = None
+    # Palabras del pedido que SI y que NO aparecieron en el producto. Es lo que
+    # permite explicarle a un vendedor (o a un cliente) por que un producto
+    # quedo donde quedo, sin hablar de porcentajes abstractos.
+    palabras_cubiertas: list[str] = None
+    palabras_faltantes: list[str] = None
 
     def __post_init__(self):
         if self.etiquetas_variante is None:
             self.etiquetas_variante = []
+        if self.palabras_cubiertas is None:
+            self.palabras_cubiertas = []
+        if self.palabras_faltantes is None:
+            self.palabras_faltantes = []
 
     def to_dict(self) -> dict[str, Any]:
         d = self.producto.to_dict()
@@ -237,6 +612,8 @@ class ResultadoMatch:
             "tier": self.tier,
             "descartado": self.descartado,
             "razon_descarte": self.razon_descarte,
+            "palabras_cubiertas": self.palabras_cubiertas,
+            "palabras_faltantes": self.palabras_faltantes,
         }
         return d
 
@@ -246,34 +623,41 @@ class Matcher:
 
     def __init__(
         self,
-        umbral_minimo: float = 55.0,
+        umbral_minimo: float = 45.0,
         pesos: dict[str, float] | None = None,
     ):
         self.umbral = umbral_minimo
+        # El texto (cobertura de palabras) pesa mas que en v2 porque ahora mide
+        # algo confiable. Marca y specs ajustan, no deciden.
         self.pesos = pesos or {
-            "texto": 0.50,
+            "texto": 0.55,
             "marca": 0.25,
-            "specs": 0.25,
+            "specs": 0.20,
         }
         assert abs(sum(self.pesos.values()) - 1.0) < 0.01, "Pesos deben sumar 1.0"
 
+    # -----------------------------------------------------------------
     def calcular_todos(
         self,
         solicitado: ProductoSolicitado,
         candidatos: list[ProductoEncontrado],
     ) -> list[ResultadoMatch]:
-        resultados = [self._calcular_uno(solicitado, c) for c in candidatos]
-        # Ordenar: descartados al final, luego los SIN precio visible
-        # (siempre detras de los cotizables), luego por score desc,
-        # y para empates: mas barato primero (util para queries genericas)
-        resultados.sort(
-            key=lambda r: (
-                r.descartado,
-                sin_precio_visible(r.producto),
-                -r.score_total,
-                r.producto.precio if r.producto.precio is not None else float("inf"),
-            )
-        )
+        """
+        Puntua todos los candidatos. `candidatos` llega en el orden en que lo
+        devolvio el proveedor, y ese orden se usa como desempate.
+        """
+        terminos = self._terminos_pedido(solicitado)
+        generica = self._es_busqueda_generica(solicitado, terminos)
+
+        resultados = [
+            self._calcular_uno(solicitado, c, terminos, generica, posicion)
+            for posicion, c in enumerate(candidatos)
+        ]
+
+        # Descartados al final; entre el resto, score desc. El score ya lleva
+        # descontada la posicion del proveedor, asi que ordenar por score
+        # preserva el orden original dentro de cada grupo.
+        resultados.sort(key=lambda r: (r.descartado, -r.score_total))
         return resultados
 
     def filtrar_por_umbral(
@@ -285,35 +669,68 @@ class Matcher:
         ]
 
     # -----------------------------------------------------------------
+    # TERMINOS DEL PEDIDO
+    # -----------------------------------------------------------------
+    @staticmethod
+    def _terminos_pedido(p: ProductoSolicitado) -> list[str]:
+        """
+        Las palabras que de verdad identifican lo que se pidio, en orden y sin
+        repetir. Sale del texto que escribio el vendedor mas marca, linea y
+        modelo si la IA los extrajo. Se quitan las palabras vacias: si "me
+        gustaria encontrar una laptop hp" entrara completo al conteo, un
+        producto correcto tendria 2 de 7 palabras y quedaria descartado.
+
+        Las specs NO entran aca: se evaluan aparte en _score_specs, donde se
+        sabe que "16" significa 16 GB y no 16 pulgadas.
+        """
+        partes: list[str] = []
+        if p.query_sugerida:
+            partes.append(p.query_sugerida)
+        for campo in (p.marca, p.linea, p.modelo, p.categoria):
+            if campo:
+                partes.append(str(campo))
+
+        vistos: set[str] = set()
+        terminos: list[str] = []
+        for tok in _normalizar(" ".join(partes)).split():
+            if tok in STOPWORDS or tok in vistos:
+                continue
+            # Tokens de una sola letra no identifican nada, salvo que sean un
+            # numero (poco probable, pero inofensivo dejarlos pasar).
+            if len(tok) < 2 and not tok.isdigit():
+                continue
+            vistos.add(tok)
+            terminos.append(tok)
+        return terminos
+
+    @staticmethod
+    def _es_busqueda_generica(p: ProductoSolicitado, terminos: list[str]) -> bool:
+        """
+        True cuando el vendedor pidio una categoria y nada mas ("calculadora",
+        "audifonos", "laptop"). En ese caso no hay nada que discriminar: todos
+        los resultados del proveedor son igual de validos, y el buscador del
+        proveedor ya los ordeno por relevancia. Pisarlo con un score inventado
+        solo degrada resultados correctos.
+        """
+        if p.marca or p.modelo or p.linea:
+            return False
+        if p.specs:
+            return False
+        return len(terminos) <= 1
+
+    # -----------------------------------------------------------------
     def _calcular_uno(
         self,
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
+        terminos: list[str],
+        generica: bool,
+        posicion: int,
     ) -> ResultadoMatch:
-        # Nombre normalizado: base para blacklist, variantes y score textual
         nombre_cand = _normalizar(candidato.nombre)
-        # Texto completo (nombre + marca + descripcion + specs): base para
-        # marca, specs y bonus, asi no se pierde info que el proveedor puso
-        # fuera del titulo.
         texto_cand = _texto_candidato(candidato)
 
-        # ---- Filtro duro: blacklist por categoria ----
-        # Solo sobre el NOMBRE: la descripcion suele decir "incluye cable"
-        # y eso no convierte al producto en un accesorio.
-        if solicitado.categoria:
-            cat_key = _normalizar(solicitado.categoria)
-            for palabra in BLACKLIST_CATEGORIA.get(cat_key, []):
-                if _contiene_palabra(palabra, nombre_cand):
-                    return ResultadoMatch(
-                        producto=candidato,
-                        score_total=0.0,
-                        score_texto=0.0,
-                        score_marca=0.0,
-                        score_specs=0.0,
-                        descartado=True,
-                        razon_descarte=f"contiene '{palabra}' (blacklist {cat_key})",
-                    )
-
+        # ---- Filtro duro: sin precio no se puede cotizar ----
         if sin_precio_visible(candidato):
             return ResultadoMatch(
                 producto=candidato,
@@ -325,39 +742,125 @@ class Matcher:
                 razon_descarte="sin_precio_visible",
             )
 
-        # ---- Score textual (mejorado) ----
-        query = self._componer_query(solicitado)
-        score_texto = self._score_textual(query, nombre_cand)
+        # ---- Filtro duro: blacklist por categoria ----
+        # Solo sobre el NOMBRE, y por POSICION: la palabra sospechosa descarta
+        # unicamente si aparece ANTES que la categoria pedida. Los titulos de
+        # producto empiezan por lo que la cosa es:
+        #   "Cable HDMI para monitor"        -> cable antes de monitor: es un cable
+        #   "Monitor LG 16MR70 + cable HDMI" -> monitor antes de cable: es un monitor
+        # Sin esta regla, el segundo se descartaba entero por mencionar un
+        # accesorio incluido, y era justo el producto que el vendedor buscaba.
+        cat_key = _clave_blacklist(solicitado.categoria)
+        if cat_key:
+            palabras_negras = BLACKLIST_CATEGORIA.get(cat_key, [])
+            if palabras_negras:
+                pos_categoria = _posicion_de(cat_key, nombre_cand)
+                for palabra in palabras_negras:
+                    # Si el vendedor pidio justamente el accesorio, no filtramos.
+                    if palabra in terminos:
+                        continue
+                    pos_negra = _posicion_de(palabra, nombre_cand)
+                    if pos_negra is None:
+                        continue
+                    if pos_categoria is not None and pos_categoria < pos_negra:
+                        continue  # el producto es la categoria; el accesorio viene incluido
+                    return ResultadoMatch(
+                        producto=candidato,
+                        score_total=0.0,
+                        score_texto=0.0,
+                        score_marca=0.0,
+                        score_specs=0.0,
+                        descartado=True,
+                        razon_descarte=f"es un accesorio: '{palabra}' (blacklist {cat_key})",
+                    )
 
-        # ---- Score de marca ----
+        # ---- Variantes (COMBO, USADA...): se aplican en los dos modos ----
+        ajuste_var, etiquetas = self._ajuste_variantes(solicitado, nombre_cand)
+
+        # ─── MODO GENERICO: se respeta el proveedor, pero no a ciegas ───
+        if generica:
+            cubiertas = [t for t in terminos if self._termino_presente(t, texto_cand)]
+
+            # Respetar al proveedor no es aceptar relleno. Buscando "laptop",
+            # Eurocomp devolvia PARLANTES y DISCOS DUROS: productos que no
+            # comparten ni una palabra ni un sinonimo con lo que se pidio. Eso
+            # no es vocabulario distinto, es el buscador llenando huecos.
+            if terminos and not cubiertas:
+                return ResultadoMatch(
+                    producto=candidato,
+                    score_total=0.0,
+                    score_texto=0.0,
+                    score_marca=0.0,
+                    score_specs=0.0,
+                    descartado=True,
+                    razon_descarte="relleno del buscador: no coincide en ninguna palabra",
+                    palabras_faltantes=list(terminos),
+                )
+
+            # El resto entra como 'bueno', en el orden en que vino. El descuento
+            # por posicion preserva ese orden al ordenar por score.
+            base = 75.0 + ajuste_var
+            score = max(0.0, min(100.0, base)) - (posicion * 0.01)
+            return ResultadoMatch(
+                producto=candidato,
+                score_total=score,
+                score_texto=100.0 if cubiertas else 0.0,
+                score_marca=0.0,
+                score_specs=0.0,
+                ajuste_variantes=ajuste_var,
+                etiquetas_variante=etiquetas,
+                tier=clasificar_tier(score),
+                palabras_cubiertas=cubiertas,
+                palabras_faltantes=[t for t in terminos if t not in cubiertas],
+            )
+
+        # ─── MODO ESPECIFICO: el matcher si discrimina ───
+        cubiertas: list[str] = []
+        faltantes: list[str] = []
+        for t in terminos:
+            if self._termino_presente(t, texto_cand):
+                cubiertas.append(t)
+            else:
+                faltantes.append(t)
+
+        # Cobertura CERO: ni una palabra del pedido, ni un sinonimo, aparece en
+        # el producto. Eso no es "otro vocabulario" — es relleno del buscador.
+        # Caso real: Eurocomp, buscando "laptop portatil", devolvia PARLANTES,
+        # DISCOS DUROS y AUDIFONOS, y los 16 se guardaban como 'dudoso'.
+        # Los sinonimos protegen el caso legitimo: "Wireless Earbuds" SI cubre
+        # "audifonos", asi que Amazon en ingles no se ve afectado.
+        if terminos and not cubiertas:
+            return ResultadoMatch(
+                producto=candidato,
+                score_total=0.0,
+                score_texto=0.0,
+                score_marca=0.0,
+                score_specs=0.0,
+                descartado=True,
+                razon_descarte="relleno del buscador: no coincide en ninguna palabra",
+                palabras_faltantes=faltantes,
+            )
+
+        score_texto = (len(cubiertas) / len(terminos) * 100) if terminos else 70.0
         score_marca = self._score_marca(solicitado, candidato, texto_cand)
-
-        # ---- Score de specs ----
         score_specs = self._score_specs(solicitado, candidato, texto_cand)
 
-        # ---- Ponderacion base ----
         score_base = (
             self.pesos["texto"] * score_texto
             + self.pesos["marca"] * score_marca
             + self.pesos["specs"] * score_specs
         )
 
-        # ---- Ajuste por variantes (COMBO, USADA, etc.) ----
-        ajuste_var, etiquetas_variante = self._ajuste_variantes(
-            solicitado, candidato, nombre_cand
-        )
-
-        # ---- Bonus por match de identidad (marca + linea/modelo) ----
         bonus_identidad = self._bonus_identidad(solicitado, texto_cand)
+        # Todas las palabras presentes: el producto es, al menos de nombre,
+        # exactamente lo que se pidio.
+        bonus_contenida = 8.0 if terminos and not faltantes else 0.0
 
-        # ---- Bonus por query totalmente contenida en el nombre ----
-        bonus_contenida = self._bonus_query_contenida(solicitado, texto_cand)
-
-        # ---- Score total (clamp a 0-100) ----
         score_total = max(
-            0.0, min(100.0, score_base + ajuste_var + bonus_identidad + bonus_contenida)
-        )
-        tier = clasificar_tier(score_total)
+            0.0,
+            min(100.0, score_base + ajuste_var + bonus_identidad + bonus_contenida),
+        ) - (posicion * 0.01)
+        score_total = max(0.0, score_total)
 
         return ResultadoMatch(
             producto=candidato,
@@ -368,110 +871,89 @@ class Matcher:
             ajuste_variantes=ajuste_var,
             bonus_identidad=bonus_identidad,
             bonus_contenida=bonus_contenida,
-            etiquetas_variante=etiquetas_variante,
-            tier=tier,
+            etiquetas_variante=etiquetas,
+            tier=clasificar_tier(score_total),
+            palabras_cubiertas=cubiertas,
+            palabras_faltantes=faltantes,
         )
 
     # -----------------------------------------------------------------
-    # Score textual: combina 3 estrategias + penaliza queries cortas
+    # ¿ESTA ESTA PALABRA EN EL PRODUCTO?
     # -----------------------------------------------------------------
     @staticmethod
-    def _score_textual(query: str, nombre: str) -> float:
-        q = _normalizar(query)
-        n = _normalizar(nombre)
+    def _termino_presente(termino: str, texto_cand: str) -> bool:
+        """
+        Un termino cuenta como presente si se cumple cualquiera de estas:
 
-        r_set = fuzz.token_set_ratio(q, n)  # todas las palabras estan?
-        r_sort = fuzz.token_sort_ratio(q, n)  # orden similar?
-        r_partial = fuzz.partial_ratio(q, n)  # substring?
+          1. Aparece como palabra completa.
+          2. Aparece alguno de sus sinonimos ("audifonos" ~ "earbuds").
+          3. Su forma compactada esta contenida — para modelos escritos de
+             formas distintas: "16MR70" encuentra a "16MR70-B" y a "16 MR70".
+          4. Hay una palabra en el producto que se le parece mucho (>= 88), lo
+             que cubre plurales y erratas: "audifono" / "audifonos",
+             "inalambrico" / "inalambricos".
 
-        base = r_set * 0.3 + r_sort * 0.4 + r_partial * 0.3
+        Es deliberadamente generoso: el proveedor ya decidio que el producto es
+        relevante cuando lo devolvio en la busqueda. El trabajo del matcher es
+        ordenar, no volver a filtrar lo que el buscador ya acepto.
+        """
+        # 1 y 2
+        for variante in _variantes_de(termino):
+            if variante and _contiene_palabra(variante, texto_cand):
+                return True
 
-        # Penalizar cuando query MUY corta vs nombre largo
-        # (evita que "laptop" de 100 contra "LAPTOP DELL PRO 16 ULTRA...")
-        # palabras_q = len(q.split())
-        # palabras_n = len(n.split())
-        # if palabras_q <= 2 and palabras_n > 6:
-        #     base *= 0.60
-        # elif palabras_q <= 3 and palabras_n > 8:
-        #     base *= 0.80
+        # 3 — solo para tokens largos, o "16" encontraria cualquier cosa
+        compacto = _compactar(termino)
+        if len(compacto) >= 4 and compacto in _compactar(texto_cand):
+            return True
 
-        return base
+        # 4 — difuso por palabra, nunca sobre la frase completa
+        if len(termino) >= 5:
+            for palabra in texto_cand.split():
+                if len(palabra) >= 4 and fuzz.ratio(termino, palabra) >= 88:
+                    return True
 
-    # -----------------------------------------------------------------
-    @staticmethod
-    def _componer_query(p: ProductoSolicitado) -> str:
-        partes: list[str] = []
-        if p.categoria:
-            partes.append(p.categoria)
-        if p.marca:
-            partes.append(p.marca)
-        if p.linea:
-            partes.append(p.linea)
-        if p.modelo:
-            partes.append(p.modelo)
-        for k, v in (p.specs or {}).items():
-            if v is not None and k in (
-                "ram_gb",
-                "almacenamiento_gb",
-                "cpu",
-                "pantalla_pulgadas",
-            ):
-                partes.append(str(v))
-        if p.query_sugerida:
-            partes.append(p.query_sugerida)
-
-        # Quitar palabras repetidas (preservando el orden). Sin esto,
-        # "monitor LG 16 monitor 16 pulgadas LG" baja el token_sort_ratio.
-        vistas: set[str] = set()
-        tokens: list[str] = []
-        for tok in _normalizar(" ".join(partes)).split():
-            if tok not in vistas:
-                vistas.add(tok)
-                tokens.append(tok)
-        return " ".join(tokens)
+        return False
 
     # -----------------------------------------------------------------
     @staticmethod
     def _score_marca(
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
-        texto_cand: str | None = None,
+        texto_cand: str,
     ) -> float:
         if not solicitado.marca:
-            return 70.0  # sin marca pedida = neutral favorable (antes era 50)
+            return 70.0  # sin marca pedida = neutral favorable
 
         marca_ped = _normalizar(solicitado.marca)
-
-        # Normalizar variantes de nombres de marca comunes
         aliases = EQUIVALENCIAS_MARCA.get(marca_ped, [marca_ped])
 
-        # 1. Comparar contra marca extraida por el scraper
+        # 1. Contra la marca que extrajo el scraper
         if candidato.marca:
             marca_cand = _normalizar(candidato.marca)
             if any(_contiene_palabra(a, marca_cand) for a in aliases):
                 return 100.0
 
-        # 2. Fallback: buscar en nombre + descripcion + specs
-        #    (por palabra completa: "lg" NO debe coincidir con "pulgadas")
-        texto = texto_cand if texto_cand is not None else _texto_candidato(candidato)
-        if any(_contiene_palabra(a, texto) for a in aliases):
+        # 2. Contra nombre + descripcion + specs, por palabra completa
+        #    ("lg" NO debe coincidir dentro de "pulgadas")
+        if any(_contiene_palabra(a, texto_cand) for a in aliases):
             return 100.0
 
-        return 0.0
+        # Marca pedida y ausente: es otra marca. No es cero absoluto porque el
+        # proveedor igual lo considero relevante, pero si una señal fuerte.
+        return 10.0
 
     # -----------------------------------------------------------------
     def _score_specs(
         self,
         solicitado: ProductoSolicitado,
         candidato: ProductoEncontrado,
-        texto_cand: str | None = None,
+        texto_cand: str,
     ) -> float:
         if not solicitado.specs:
-            return 70.0  # sin specs pedidas = neutral favorable (antes 50)
+            return 70.0  # sin specs pedidas = neutral favorable
 
-        texto = texto_cand if texto_cand is not None else _texto_candidato(candidato)
         specs_cand = candidato.specs or {}
-
         aciertos = 0
         total = 0
 
@@ -479,12 +961,12 @@ class Matcher:
             if valor is None or valor is False:
                 continue
             total += 1
-            if clave in specs_cand and _normalizar(specs_cand.get(clave)) == _normalizar(
-                valor
-            ):
+            if clave in specs_cand and _normalizar(
+                specs_cand.get(clave)
+            ) == _normalizar(valor):
                 aciertos += 1
                 continue
-            if _spec_en_nombre(clave, valor, texto):
+            if _spec_en_nombre(clave, valor, texto_cand):
                 aciertos += 1
 
         if total == 0:
@@ -495,16 +977,12 @@ class Matcher:
     @staticmethod
     def _ajuste_variantes(
         solicitado: ProductoSolicitado,
-        candidato: ProductoEncontrado,
-        nombre_cand: str | None = None,
+        nombre_cand: str,
     ) -> tuple[float, list[str]]:
         """
-        Devuelve (ajuste_score, lista_etiquetas_detectadas).
-        Penaliza cuando el candidato tiene palabras como COMBO/USADA/etc.
-        y el cliente NO las pidio explicitamente.
-        Solo mira el NOMBRE y por palabra completa.
+        Penaliza cuando el candidato dice COMBO/USADA/RECERTIFICADA y el cliente
+        no lo pidio. Solo mira el NOMBRE y por palabra completa.
         """
-        nombre_lower = nombre_cand if nombre_cand is not None else _normalizar(candidato.nombre)
         texto_pedido = _normalizar(
             (solicitado.query_sugerida or "")
             + " "
@@ -515,31 +993,27 @@ class Matcher:
 
         ajuste = 0.0
         etiquetas: list[str] = []
-        etiquetas_vistas: set[str] = set()  # evita duplicados (usado/usada)
+        vistas: set[str] = set()
 
         for palabra, penalizacion in VARIANTES_NEGATIVAS.items():
-            if _contiene_palabra(palabra, nombre_lower):
+            if _contiene_palabra(palabra, nombre_cand):
                 etiqueta = ETIQUETAS_VARIANTE[palabra]
-                if etiqueta not in etiquetas_vistas:
+                if etiqueta not in vistas:
                     etiquetas.append(etiqueta)
-                    etiquetas_vistas.add(etiqueta)
-                # Solo penalizar si el usuario NO lo pidió
+                    vistas.add(etiqueta)
                 if not _contiene_palabra(palabra, texto_pedido):
                     ajuste += penalizacion
 
         return ajuste, etiquetas
 
-    # ---------------------------------------------------------------------
-    # Helpers para detectar specs en texto libre
-    # ---------------------------------------------------------------------
+    # -----------------------------------------------------------------
     @staticmethod
     def _bonus_identidad(
         solicitado: ProductoSolicitado,
         texto_cand: str,
     ) -> float:
         """
-        Si marca + (linea o modelo) del pedido aparecen todos en el
-        texto del candidato, es un match de identidad clara: +10.
+        Marca + (linea o modelo) presentes los dos: identidad clara, +10.
         """
         if not solicitado.marca:
             return 0.0
@@ -554,8 +1028,6 @@ class Matcher:
             if not campo:
                 continue
             c = _normalizar(campo)
-            # marca + linea / marca + modelo (tolerante a guiones y espacios:
-            # "16MR70" coincide con "16MR70-B" o "16 MR70")
             if _contiene_palabra(c, texto_cand) or (
                 len(_compactar(c)) >= 4 and _compactar(c) in compacto
             ):
@@ -563,64 +1035,30 @@ class Matcher:
 
         return 0.0
 
-    # -----------------------------------------------------------------
-    @staticmethod
-    def _bonus_query_contenida(
-        solicitado: ProductoSolicitado,
-        texto_cand: str,
-    ) -> float:
-        """
-        Si TODAS las palabras significativas de la query aparecen en el
-        texto del candidato (en cualquier orden), +8.
 
-        Palabras ignoradas: articulos. Se conservan marcas cortas (LG, HP)
-        y numeros (16, 24) porque son los que definen el producto.
-        """
-        if not solicitado.query_sugerida:
-            return 0.0
-
-        palabras = [
-            w
-            for w in _normalizar(solicitado.query_sugerida).split()
-            if w not in STOPWORDS and (len(w) >= 2 or w.isdigit())
-        ]
-        if not palabras:
-            return 0.0
-
-        # Todas las palabras deben estar (como palabra completa)
-        if all(_contiene_palabra(p, texto_cand) for p in palabras):
-            return 8.0
-        return 0.0
-
-
-def _spec_en_nombre(clave: str, valor: Any, nombre: str) -> bool:
-    """
-    Busca una spec pedida dentro del texto (ya normalizado) del candidato.
-    Se mantiene el nombre por compatibilidad, pero recibe el texto completo.
-    """
-    nombre = _normalizar(nombre)
+# ---------------------------------------------------------------------
+# Helpers para detectar specs en texto libre
+# ---------------------------------------------------------------------
+def _spec_en_nombre(clave: str, valor: Any, texto: str) -> bool:
+    """Busca una spec pedida dentro del texto (ya normalizado) del candidato."""
+    texto = _normalizar(texto)
     if clave == "ram_gb":
-        return _contiene_gb(nombre, valor)
+        return _contiene_gb(texto, valor)
     if clave == "almacenamiento_gb":
-        return _contiene_gb(nombre, valor) or _contiene_ssd_hdd(nombre, valor)
+        return _contiene_gb(texto, valor) or _contiene_ssd_hdd(texto, valor)
     if clave == "pantalla_pulgadas":
         num = _normalizar_numero(str(valor))
-        # Tras _normalizar, 16" / 16 pulg / 16-inch / 16.0" quedan "16 pulgadas"
-        return re.search(rf"(?<![\d.]){re.escape(num)} pulgadas\b", nombre) is not None
+        return re.search(rf"(?<![\d.]){re.escape(num)} pulgadas\b", texto) is not None
     if clave in ("cpu", "almacenamiento_tipo"):
-        return _contiene_palabra(_normalizar(valor), nombre)
-    # Spec booleana (ej. "tactil": True): buscar el nombre de la clave
+        return _contiene_palabra(_normalizar(valor), texto)
     if valor is True:
-        return _contiene_palabra(_normalizar(clave.replace("_", " ")), nombre)
-    # Cualquier otra spec: buscar el valor como palabra completa
-    return _contiene_palabra(_normalizar(valor), nombre)
+        return _contiene_palabra(_normalizar(clave.replace("_", " ")), texto)
+    return _contiene_palabra(_normalizar(valor), texto)
 
 
 def _contiene_gb(texto: str, valor: int | float) -> bool:
     num = _normalizar_numero(str(valor))
-    patterns = [
-        rf"(?<![\d.]){re.escape(num)}\s*-?\s*gb\b",
-    ]
+    patterns = [rf"(?<![\d.]){re.escape(num)}\s*-?\s*gb\b"]
     # 1024 / 1000 GB tambien se escriben como 1TB, 2048 como 2TB, etc.
     try:
         v = float(valor)

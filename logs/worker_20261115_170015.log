@@ -1,0 +1,13 @@
+======================================================================
+INICIO RPA — 2026-11-15T17:00:15
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_170015.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:20304
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+⏹ Señal 2 recibida. Termino el trabajo en curso y salgo.
+Worker detenido limpiamente.

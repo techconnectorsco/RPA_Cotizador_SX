@@ -1,0 +1,138 @@
+======================================================================
+INICIO RPA — 2026-11-15T17:35:20
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_173520.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:25568
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+======================================================================
+TRABAJO 50fe82b0-4b26-45f5-971b-3e3be4ac13b7  [buscar]  intento 1/2
+SOLICITUD 2d9560d0-7c34-4813-8050-9021b9a10b30
+TEXTO: memoria ram ddr4
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    1. [memoria ram]    — query: 'memoria ram ddr4' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item b4130ea2-b1e9-4390-a847-9253bb055a3d  (intento #1)  query: 'memoria ram ddr4'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['cococo', 'dataformas', 'intcomex', 'intelec']
+  Corriendo 5 scrapers en paralelo (máx 1 a la vez)...
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=memoria+ram+ddr4
+⚠ [amazon] ERROR: Page.goto: net::ERR_FAILED at https://www.amazon.com/s?k=memoria+ram+ddr4
+Call log:
+  - navigating to "https://www.amazon.com/s?k=memoria+ram+ddr4", waiting until "domcontentloaded"
+
+  ✗ Fallo (10473 ms): Error: Page.goto: net::ERR_FAILED at https://www.amazon.com/s?k=memoria+ram+ddr4
+Call log:
+  - navig
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=memoria+ram+ddr4
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=memoria+ram+ddr4&page=2
+  [bpc] Productos obtenidos: 20
+  ✓ 20 productos (15065 ms)
+
+▶ cdc
+  [cdc] Sesión iniciada con éxito.
+  [cdc] Buscando: 'memoria ram ddr4'
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  ✓ 0 productos (3024 ms)
+
+▶ compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=memoria+ram+ddr4&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  ✓ 0 productos (1791 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: memoria ram ddr4
+  [eurocomp] Procesando 20 productos
+  ✓ 20 productos (3447 ms)
+    [bpc] 20 crudos → guardados 0 (exacto:0 bueno:0 similar:0 dudoso:0)
+      ↳ 20 no llegaron a la pantalla: 20 sin_precio_visible
+         · [sin_precio_visible] HP PROBOOK 4 14 G1i...
+         · [sin_precio_visible] HP ELITEBOOk 8 G1i 14 Touch...
+         · [sin_precio_visible] HP PROBOOK 4 G1i 16...
+    [cdc] 0 crudos — el scraper no encontró nada
+    [compunomicos] 0 crudos — el scraper no encontró nada
+    [eurocomp] 20 crudos → guardados 20 (exacto:20 bueno:0 similar:0 dudoso:0)
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 70.0s
+  Estado de la solicitud: scrapeando
+
+======================================================================
+TRABAJO ed543624-49a6-4acd-8f34-f816f6d8fc81  [buscar]  intento 1/2
+SOLICITUD 2d9560d0-7c34-4813-8050-9021b9a10b30
+TEXTO: computadora de 16gb ram y 512gb
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+    1. [computadora]    — query: 'computadora 16gb ram 512gb' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item ba3a2035-5ca5-4fa0-aa7e-c4df085f6f0a  (intento #1)  query: 'computadora 16gb ram 512gb'
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['cococo', 'dataformas', 'intcomex', 'intelec']
+  Corriendo 5 scrapers en paralelo (máx 1 a la vez)...
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=computadora+16gb+ram+512gb
+  [amazon] 16 productos detectados
+  ✓ 16 productos (37108 ms)
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=computadora+16gb+ram+512gb
+  [bpc] Productos obtenidos: 3
+  ✓ 3 productos (7800 ms)
+
+▶ cdc
+  [cdc] Sesión iniciada con éxito.
+  [cdc] Buscando: 'computadora 16gb ram 512gb'
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  ✓ 0 productos (2226 ms)
+
+▶ compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=computadora+16gb+ram+512gb&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  ✓ 0 productos (1663 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: computadora 16gb ram 512gb
+⚠ [eurocomp] ERROR: Page.wait_for_function: Timeout 30000ms exceeded.
+  ✗ Fallo (31440 ms): TimeoutError: Page.wait_for_function: Timeout 30000ms exceeded.
+Traceback (most recent call last):
+ 
+    [amazon] 16 crudos → guardados 10 (exacto:7 bueno:2 similar:0 dudoso:1)
+      ↳ 6 no llegaron a la pantalla: 6 sin_precio_visible
+         · [sin_precio_visible] Dell Latitude 5420 - Laptop Core i5-1145G7 de 14 pulgadas, 512 GB, PCI
+         · [sin_precio_visible] HP Portátil táctil FHD IPS de 15.6 pulgadas, AMD Ryzen 7 7730U, 16 GB 
+         · [sin_precio_visible] Lenovo Portátil empresarial de 16", 16 GB de RAM, SSD de 512 GB
+    [bpc] 3 crudos → guardados 0 (exacto:0 bueno:0 similar:0 dudoso:0)
+      ↳ 3 no llegaron a la pantalla: 3 sin_precio_visible
+         · [sin_precio_visible] DELL PRO MFF I5 / 16GB RAM...
+         · [sin_precio_visible] DELL PRO MFF I5 / 8GB RAM /...
+         · [sin_precio_visible] DELL PRO 15 CORE I7-1355U /...
+    [cdc] 0 crudos — el scraper no encontró nada
+    [compunomicos] 0 crudos — el scraper no encontró nada
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 101.8s
+  Estado de la solicitud: lista
+
+⏹ Señal 2 recibida. Termino el trabajo en curso y salgo.
+Worker detenido limpiamente.

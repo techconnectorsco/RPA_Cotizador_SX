@@ -1,6 +1,11 @@
 """
 Punto de entrada del RPA Cotizador SX.
 
+En producción el que manda es worker.py: consume la cola cotizador.trabajos y
+llama a las funciones de este archivo. main.py se conserva para el modo CLI
+(desarrollo y pruebas puntuales) y porque aquí viven las piezas compartidas:
+interpretar_y_armar_query(), ejecutar_scrapers() y procesar_item().
+
 Tres modos de uso:
 
   Modo CLI (desarrollo/testing):
@@ -40,6 +45,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -60,7 +66,7 @@ from cococo import CococoScraper
 from eurocomp import EurocompScraper
 from intcomex import IntcomexScraper
 from cdc import CDCScraper
-from matcher import Matcher
+from matcher import Matcher, limpiar_query
 from modelo import ProductoSolicitado, ResultadoScraper
 
 # ---------------------------------------------------------------------
@@ -78,6 +84,70 @@ SCRAPERS_DISPONIBLES = {
     # "dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,
 }
+
+# Umbral del matcher. Vive acá para que el worker y el modo CLI usen el mismo.
+UMBRAL_MATCHER = 45.0
+
+# Tiers que se persisten. 'dudoso' se guarda a propósito: son resultados que el
+# proveedor consideró relevantes y que el vendedor puede querer mirar. Lo que NO
+# se guarda es lo que el matcher descarta (sin precio, accesorios, relleno).
+TIERS_A_GUARDAR = ("exacto", "bueno", "similar", "dudoso")
+
+
+# ---------------------------------------------------------------------
+# INTERPRETACIÓN: la IA extrae, el código arma la query
+# ---------------------------------------------------------------------
+def interpretar_y_armar_query(texto: str) -> list[ProductoSolicitado]:
+    """
+    Convierte el texto del vendedor en uno o más ProductoSolicitado listos
+    para buscar. Es la ÚNICA puerta de entrada a la IA: la usan tanto el worker
+    como el modo CLI, para que los dos se comporten igual.
+
+    División de trabajo, y es lo importante de esta función:
+
+      · La IA EXTRAE: marca, línea, modelo, specs, cantidad. Eso es lo que
+        ningún buscador puede hacer con un correo de un cliente, y es lo que
+        le permite al matcher distinguir un LG de 16" de un ARZOPA de 16".
+      · El CÓDIGO escribe la query, con limpiar_query(), a partir del texto
+        del vendedor y nada más.
+
+    Antes la query la escribía la IA y le agregaba palabras que el catálogo del
+    proveedor no usa: "laptop" se volvía "laptop portatil" y Eurocomp pasaba de
+    devolver laptops a devolver parlantes; "calculadora" se volvía "calculadora
+    electronica" y Amazon devolvía cero. Los buscadores de e-commerce funcionan
+    con AND: cada palabra de más achica el resultado.
+
+    Si la IA falla del todo (modelo caído, sin cuota, texto raro), se busca el
+    texto tal cual: el vendedor SIEMPRE tiene que ver algo.
+    """
+    productos = interpretar_solicitud(texto)
+
+    if not productos:
+        print("  ⚠ La IA no devolvió productos. Uso el texto tal cual como búsqueda.")
+        return [
+            ProductoSolicitado(
+                categoria=None,
+                marca=None,
+                linea=None,
+                modelo=None,
+                specs={},
+                cantidad=1,
+                query_sugerida=limpiar_query(texto),
+            )
+        ]
+
+    if len(productos) == 1:
+        # Un solo producto: la query es lo que escribió el vendedor, limpio.
+        # Lo que la IA entendió se conserva en marca/modelo/specs, que es donde
+        # realmente sirve.
+        productos[0].query_sugerida = limpiar_query(texto)
+    else:
+        # Varios productos en un mismo renglón ("5 laptops y 3 monitores"):
+        # acá sí hace falta la separación que hizo la IA, pero igual se limpia.
+        for p in productos:
+            p.query_sugerida = limpiar_query(p.query_sugerida or texto)
+
+    return productos
 
 
 def ejecutar_scrapers_OLD(
@@ -121,15 +191,16 @@ def ejecutar_scrapers_OLD(
             try:
                 for codigo, ScraperCls in compartidos:
                     resultados.append(
-                        _correr_un_scraper(codigo, ScraperCls, query, browser)
+                        _correr_un_scraper_OLD(codigo, ScraperCls, query, browser)
                     )
             finally:
                 browser.close()
 
     # ---- Tanda 2: scrapers autonomos (fuera del sync_playwright) ----
     for codigo, ScraperCls in autonomos:
-        resultados.append(_correr_un_scraper(codigo, ScraperCls, query, browser=None))
-
+        resultados.append(
+            _correr_un_scraper_OLD(codigo, ScraperCls, query, browser=None)
+        )
     return resultados
 
 
@@ -142,7 +213,12 @@ def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoS
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    MAX_PARALELO = 3  # cuántos navegadores a la vez (subir si el VPS aguanta)
+    # Cuántos navegadores a la vez. Por defecto 1: con 3 simultáneos, BPC,
+    # Eurocomp y CDC fallaban por timeout y parecía problema de los sitios,
+    # cuando en realidad era saturación de la máquina. Se puede subir por
+    # SCRAPER_MAX_PARALELO en el .env si el VPS lo aguanta — pero súbelo de a
+    # uno y comprobando el log, no a ciegas.
+    MAX_PARALELO = int(os.getenv("SCRAPER_MAX_PARALELO", "1"))
 
     resultados: list[ResultadoScraper] = []
 
@@ -223,18 +299,24 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
 
     Para que el log sea legible pese al paralelismo, este scraper acumula sus
     mensajes y los imprime todos juntos al final, en un bloque.
+
+    IMPORTANTE: la captura usa log_paralelo.capturar_salida_del_hilo() y NO
+    contextlib.redirect_stdout. redirect_stdout cambia sys.stdout globalmente,
+    así que con varios hilos los buffers se pisan y sys.stdout termina
+    apuntando a un buffer descartado: desde ahí el proceso sigue trabajando
+    pero deja de loguear, para siempre. Con el worker, que vive horas, eso
+    significaba quedarse ciego a mitad del trabajo. Ver log_paralelo.py.
     """
-    import io
     import time
     import traceback
-    from contextlib import redirect_stdout
+
+    from log_paralelo import capturar_salida_del_hilo
 
     inicio = time.perf_counter()
-    buffer = io.StringIO()
     resultado: ResultadoScraper | None = None
 
-    try:
-        with redirect_stdout(buffer):
+    with capturar_salida_del_hilo() as buffer:
+        try:
             # Patchright (amazon) ignora el browser que reciba; los demás
             # abren su propio Chromium aquí. Cada hilo, su propio Playwright.
             if ScraperCls.usa_browser_compartido:
@@ -253,24 +335,26 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
                 with ScraperCls(browser=None) as scraper:
                     resultado = scraper.ejecutar(query)
 
-        _log_resultado_en(buffer, resultado)
+            _log_resultado_en(buffer, resultado)
 
-    except Exception as e:
-        duracion = int((time.perf_counter() - inicio) * 1000)
-        error_full = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-        print(buffer.getvalue(), end="")
-        print(f"\n▶ {codigo}")
-        print(f"  ✗ [{codigo}] Falló al iniciar/cerrar ({duracion} ms): {e}")
-        return ResultadoScraper(
-            proveedor=codigo,
-            query=query,
-            exitoso=False,
-            productos=[],
-            duracion_ms=duracion,
-            error=error_full,
-        )
+        except Exception as e:
+            duracion = int((time.perf_counter() - inicio) * 1000)
+            error_full = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            print(
+                f"  ✗ [{codigo}] Falló al iniciar/cerrar ({duracion} ms): {e}",
+                file=buffer,
+            )
+            resultado = ResultadoScraper(
+                proveedor=codigo,
+                query=query,
+                exitoso=False,
+                productos=[],
+                duracion_ms=duracion,
+                error=error_full,
+            )
 
-    # Imprimir el bloque completo de este scraper, junto, al terminar
+    # Ya fuera de la captura: la salida de este hilo volvió a la normalidad y el
+    # bloque se imprime completo, de una sola vez.
     print(f"\n▶ {codigo}")
     print(buffer.getvalue(), end="")
     return resultado
@@ -312,6 +396,11 @@ def procesar_item(
 
     `intento_numero` marca a qué intento pertenecen las ejecuciones y productos
     guardados. Default = 1 mantiene compatibilidad con el flujo original.
+
+    El log explica POR QUÉ se descartó cada producto que no llegó a la pantalla.
+    Sin ese desglose, un proveedor que trae 20 productos y guarda 0 se ve igual
+    que uno que no trajo nada, y no hay manera de saber si el problema es el
+    precio, la blacklist, el matcher o el scraper.
     """
     query = solicitado.query_sugerida
     print(f"\n  → Item {item_id}  (intento #{intento_numero})  query: '{query}'")
@@ -331,35 +420,56 @@ def procesar_item(
             intento_numero=intento_numero,
         )
 
-        if not r.exitoso or not r.productos:
+        if not r.exitoso:
+            continue
+        if not r.productos:
+            print(f"    [{r.proveedor}] 0 crudos — el scraper no encontró nada")
             continue
 
         # 2. Aplicar matcher
         matches_todos = matcher.calcular_todos(solicitado, r.productos)
 
-        # 3. Convertir a formato dict
-        productos_con_match = [m.to_dict() for m in matches_todos]
+        # 3. Contar POR QUÉ se cae cada producto, antes de guardar
+        motivos = Counter()
+        for m in matches_todos:
+            if m.descartado:
+                motivos[m.razon_descarte or "descartado"] += 1
+            elif m.tier not in TIERS_A_GUARDAR:
+                motivos[f"tier {m.tier} no se guarda"] += 1
 
-        # 4. Persistir solo tiers exacto/bueno/similar
+        # 4. Persistir
+        productos_con_match = [m.to_dict() for m in matches_todos]
         guardados = db.guardar_productos_encontrados(
             solicitud_item_id=item_id,
             scraper_ejecucion_id=ejecucion_id,
             productos_con_match=productos_con_match,
-            tiers_a_guardar=("exacto", "bueno", "similar", "dudoso"),
+            tiers_a_guardar=TIERS_A_GUARDAR,
             intento_numero=intento_numero,
         )
         db.actualizar_total_guardados(ejecucion_id, guardados)
 
-        # Contadores por tier para log
+        # 5. Log: tiers de lo que entró + motivos de lo que no
         tiers = Counter(m.tier for m in matches_todos if not m.descartado)
         print(
             f"    [{r.proveedor}] {len(r.productos)} crudos → "
             f"guardados {guardados} "
-            f"(exacto:{tiers.get('exacto',0)} "
-            f"bueno:{tiers.get('bueno',0)} "
-            f"similar:{tiers.get('similar',0)} "
-            f"dudoso:{tiers.get('dudoso',0)})"
+            f"(exacto:{tiers.get('exacto', 0)} "
+            f"bueno:{tiers.get('bueno', 0)} "
+            f"similar:{tiers.get('similar', 0)} "
+            f"dudoso:{tiers.get('dudoso', 0)})"
         )
+
+        perdidos = len(r.productos) - guardados
+        if perdidos > 0:
+            detalle = ", ".join(f"{n} {motivo}" for motivo, n in motivos.most_common())
+            print(
+                f"      ↳ {perdidos} no llegaron a la pantalla: "
+                f"{detalle or 'sin motivo registrado'}"
+            )
+            # Los primeros descartados, con nombre, para poder juzgar a ojo si
+            # el descarte fue correcto o si el filtro está de más.
+            for m in [m for m in matches_todos if m.descartado][:3]:
+                print(f"         · [{m.razon_descarte}] {m.producto.nombre[:70]}")
 
 
 def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
@@ -389,27 +499,8 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         )
         print("\n[1/3] Interpretando con IA...")
 
-        productos_solicitados = interpretar_solicitud(texto_original)
-
-        if not productos_solicitados:
-            # La IA no devolvió productos. Puede ser texto no-cotización, o un
-            # fallo de IA (modelo caído, sin cuota, 404...). NO cerramos la
-            # solicitud: usamos el texto tal cual como búsqueda directa, para
-            # que el vendedor SIEMPRE vea algo.
-            print(
-                "  ⚠ La IA no devolvió productos. Uso el texto tal cual como búsqueda."
-            )
-            productos_solicitados = [
-                ProductoSolicitado(
-                    categoria=None,
-                    marca=None,
-                    linea=None,
-                    modelo=None,
-                    specs={},
-                    cantidad=1,
-                    query_sugerida=texto_original.strip()[:120],
-                )
-            ]
+        # La IA extrae marca/modelo/specs; la query la arma limpiar_query().
+        productos_solicitados = interpretar_y_armar_query(texto_original)
 
         # Guardar interpretación completa
         interpretacion_json = {
@@ -451,7 +542,7 @@ def procesar_solicitud(solicitud_id: str, texto_original: str) -> dict:
         if not codigos_activos:
             raise ValueError("No hay proveedores activos configurados para buscar.")
 
-        matcher = Matcher(umbral_minimo=55.0)
+        matcher = Matcher(umbral_minimo=UMBRAL_MATCHER)
 
         for item_id, solicitado in zip(item_ids, productos_solicitados):
             procesar_item(
@@ -531,24 +622,9 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         # 3. Guardar el texto libre que el vendedor escribió
         db.guardar_texto_reinterpretacion(item_id, nuevo_texto)
 
-        # 4. Reinterpretar con IA
+        # 4. Reinterpretar con IA (la query la arma limpiar_query)
         print("\n[1/3] Reinterpretando con IA...")
-        productos_solicitados = interpretar_solicitud(nuevo_texto)
-
-        # Si la IA no devolvió nada, hacemos fallback: usar el texto tal cual
-        if not productos_solicitados:
-            print("  ⚠ La IA no devolvió productos. Usando texto tal cual como query.")
-            productos_solicitados = [
-                ProductoSolicitado(
-                    categoria=None,
-                    marca=None,
-                    linea=None,
-                    modelo=None,
-                    specs={},
-                    cantidad=1,
-                    query_sugerida=nuevo_texto.strip()[:120],
-                )
-            ]
+        productos_solicitados = interpretar_y_armar_query(nuevo_texto)
 
         # Reintento = 1 item. Si la IA devolvió varios, nos quedamos con el primero
         solicitado = productos_solicitados[0]
@@ -575,7 +651,7 @@ def procesar_reintento(item_id: str, nuevo_texto: str) -> dict:
         if not codigos_activos:
             raise ValueError("No hay proveedores activos configurados para buscar.")
 
-        matcher = Matcher(umbral_minimo=55.0)
+        matcher = Matcher(umbral_minimo=UMBRAL_MATCHER)
 
         print(f"\n[3/3] Corriendo scrapers...")
         procesar_item(
@@ -644,26 +720,9 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
             mensaje_progreso="Agregando producto y buscando en proveedores...",
         )
 
-        # Interpretar con IA
+        # Interpretar con IA (la query la arma limpiar_query)
         print("\n[1/3] Interpretando con IA...")
-        productos_solicitados = interpretar_solicitud(texto)
-
-        # Fallback: si la IA no devolvió nada, buscamos el texto tal cual
-        if not productos_solicitados:
-            print(
-                "  ⚠ La IA no devolvió productos. Uso el texto tal cual como búsqueda."
-            )
-            productos_solicitados = [
-                ProductoSolicitado(
-                    categoria=None,
-                    marca=None,
-                    linea=None,
-                    modelo=None,
-                    specs={},
-                    cantidad=1,
-                    query_sugerida=texto.strip()[:120],
-                )
-            ]
+        productos_solicitados = interpretar_y_armar_query(texto)
 
         print(f"  ✓ Se agregarán {len(productos_solicitados)} renglón(es):")
         for i, p in enumerate(productos_solicitados, 1):
@@ -689,7 +748,7 @@ def procesar_agregar_busqueda(solicitud_id: str, texto: str) -> dict:
         if not codigos_activos:
             raise ValueError("No hay proveedores activos configurados para buscar.")
 
-        matcher = Matcher(umbral_minimo=55.0)
+        matcher = Matcher(umbral_minimo=UMBRAL_MATCHER)
 
         for item_id, solicitado in zip(item_ids, productos_solicitados):
             procesar_item(
