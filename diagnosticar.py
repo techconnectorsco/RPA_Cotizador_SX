@@ -96,12 +96,24 @@ def _interpretar(texto: str, usar_ia: bool) -> ProductoSolicitado:
     return p
 
 
-def _correr_scraper(codigo: str, ScraperCls, query: str, ver_navegador: bool):
+def _correr_scraper(codigo: str, ScraperCls, variantes, ver_navegador: bool):
     """
     Corre UN scraper, en un solo hilo, sin buffers ni redirecciones de salida.
     Asi todo lo que imprima el scraper se ve en vivo — que es justo lo que
     necesitas cuando algo falla a mitad de camino.
+
+    `variantes` es la lista de queries en cascada, igual que en produccion: se
+    usa _buscar_en_cascada() de main.py para que lo que veas aca sea exactamente
+    lo que hace el worker. Con una sola variante se comporta como una busqueda
+    simple.
     """
+    import sys
+
+    from main import _buscar_en_cascada
+
+    if isinstance(variantes, str):
+        variantes = [variantes]
+
     headless = config.scraper_headless and not ver_navegador
 
     if ScraperCls.usa_browser_compartido:
@@ -112,13 +124,13 @@ def _correr_scraper(codigo: str, ScraperCls, query: str, ver_navegador: bool):
             )
             try:
                 with ScraperCls(browser) as scraper:
-                    return scraper.ejecutar(query)
+                    return _buscar_en_cascada(scraper, codigo, variantes, sys.stdout)
             finally:
                 browser.close()
     else:
         # Autonomo (amazon/patchright): se provisiona su propio navegador.
         with ScraperCls(browser=None) as scraper:
-            return scraper.ejecutar(query)
+            return _buscar_en_cascada(scraper, codigo, variantes, sys.stdout)
 
 
 def _precio_str(p) -> str:
@@ -162,8 +174,14 @@ def diagnosticar(
             "la IA solo extrae)"
         )
 
+    from matcher import variantes_query
+
+    variantes = variantes_query(texto, solicitado)
+    if len(variantes) > 1:
+        print(f"Variantes en cascada: {variantes}")
+
     print("\nCorriendo el scraper...")
-    resultado = _correr_scraper(codigo, scrapers[codigo], query, ver_navegador)
+    resultado = _correr_scraper(codigo, scrapers[codigo], variantes, ver_navegador)
 
     if not resultado.exitoso:
         print(f"\n✗ EL SCRAPER FALLO en {resultado.duracion_ms} ms")
@@ -294,7 +312,7 @@ def probar_cascada(codigo: str, texto: str, usar_ia: bool, ver_navegador: bool) 
 
         try:
             resultado = _correr_scraper(
-                codigo, scrapers[codigo], variante, ver_navegador
+                codigo, scrapers[codigo], [variante], ver_navegador
             )
         except Exception as e:
             print(f"  ✗ revento: {e}")

@@ -50,12 +50,10 @@ class DataformasScraper(ScraperBase):
         usuario = (os.getenv("DATAFORMAS_USER") or "").strip()
         password = (os.getenv("DATAFORMAS_PASSWORD") or "").strip()
 
-        if not usuario and not password:
-            print("  [dataformas] Sin credenciales configuradas en .env")
-            return
         if not usuario or not password:
             self._login_error = RuntimeError(
-                "Configura ambas variables DATAFORMAS_USER y DATAFORMAS_PASSWORD en el .env"
+                "Dataformas entrega precios de distribuidor solo con sesión. "
+                "Configura DATAFORMAS_USER y DATAFORMAS_PASSWORD en el .env"
             )
             return
 
@@ -63,30 +61,38 @@ class DataformasScraper(ScraperBase):
         assert page is not None
         try:
             page.set_default_timeout(config.scraper_timeout_ms)
+            print("  [dataformas] Abriendo la página de login...")
             page.goto(
                 f"{self.url_base}/profile/login",
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=config.scraper_timeout_ms,
             )
+            print("  [dataformas] Esperando el formulario...")
             page.wait_for_selector(
                 self.SEL_LOGIN_USER, timeout=config.scraper_timeout_ms
             )
+            print("  [dataformas] Llenando credenciales...")
             page.locator(self.SEL_LOGIN_USER).first.fill(usuario)
             page.locator(self.SEL_LOGIN_PASSWORD).first.fill(password)
             self._esperar_antes_de_enviar_login()
+            print("  [dataformas] Enviando el formulario...")
             page.locator(self.SEL_LOGIN_SUBMIT).first.click(
                 timeout=config.scraper_timeout_ms
             )
 
-            # Esperar a que la navegación confirme la salida de /profile/login
-            # Esperar a que la navegación confirme la salida de /profile/login
+            espera_login = config.scraper_login_timeout_ms
+            print(
+                "  [dataformas] Esperando el redirect fuera de /profile/login "
+                f"(hasta {espera_login} ms)..."
+            )
             page.wait_for_function(
                 "() => !location.pathname.includes('/profile/login')",
-                timeout=config.scraper_login_timeout_ms,
+                timeout=espera_login,
             )
             self._autenticado = True
             print("  [dataformas] Sesión iniciada correctamente")
         except Exception as error:
+            print(f"  [dataformas] Login fallido. URL actual: {page.url}")
             self._login_error = RuntimeError(
                 f"No fue posible iniciar sesión en Dataformas: {error}"
             )
@@ -97,6 +103,11 @@ class DataformasScraper(ScraperBase):
 
         if self._login_error:
             raise RuntimeError(str(self._login_error)) from self._login_error
+        if not self._autenticado:
+            raise RuntimeError(
+                "Dataformas: la sesión no quedó iniciada; los precios serían "
+                "de público y no sirven para cotizar"
+            )
 
         texto = " ".join(query.split())
         if not texto:

@@ -251,24 +251,35 @@ SINONIMOS: dict[str, set[str]] = {
     "mouse": {"mouse", "raton", "ratón"},
     "impresora": {"impresora", "printer", "multifuncional", "multifuncion"},
     "escaner": {"escaner", "scanner"},
-    # Eurocomp titula "HD SOLIDO EXTERNO 1TB", nunca "disco duro". Sin estos
-    # sinonimos, buscar "disco duro externo 1tb" daba cero en su buscador y los
-    # productos que si aparecian quedaban en 'similar' en vez de 'exacto'.
+    # Tres proveedores, tres vocabularios para la misma cosa, todos medidos:
+    #   Eurocomp -> "HD SOLIDO EXTERNO 1TB"
+    #   CDC      -> "DD SOLIDO KINGSTON 2TB"
+    #   Amazon   -> "Samsung SSD portatil T7 1TB"
+    # Un SSD ES un disco, asi que va en el mismo grupo. El costo es que pedir
+    # "ssd" tambien acepta un HDD mecanico; se asume a cambio de no perder los
+    # productos correctos, que es un error mucho mas visible para el vendedor.
     # "duro" va aca a proposito: suelto no significa nada, pero si el producto
-    # dice "HD" hay que darlo por cubierto.
+    # dice "HD" o "DD" hay que darlo por cubierto.
     "disco": {
         "disco",
         "duro",
+        "dd",
         "hd",
         "hdd",
+        "ssd",
+        "solido",
+        "nvme",
+        "m.2",
         "unidad",
         "almacenamiento",
         "hard drive",
         "drive",
     },
-    # Separado de "disco" porque NO son lo mismo: pedir un SSD y recibir un
-    # HDD mecanico es un error, no un sinonimo.
-    "ssd": {"ssd", "solido", "nvme", "m.2", "estado solido"},
+    # "externo" tambien tiene varios nombres. "portatil" entra aca aunque este
+    # tambien en "laptop": en español la palabra es ambigua de verdad. El indice
+    # de sinonimos es por termino y no transitivo, asi que "laptop" NO queda
+    # contaminado por esto.
+    "externo": {"externo", "externa", "portable", "portatil", "extraible"},
     "memoria": {"memoria", "ram", "memory"},
     "tableta": {"tableta", "tablet"},
     "celular": {"celular", "telefono", "smartphone", "movil", "phone"},

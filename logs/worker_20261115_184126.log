@@ -1,0 +1,122 @@
+======================================================================
+INICIO RPA — 2026-11-15T18:41:26
+  Ejecutable : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\venv\Scripts\python.exe
+  Directorio : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA
+  Argumentos : (ninguno)
+  Log        : D:\Users\Usuario\Desktop\SOPORTEXPERTO\SX-COTIZADOR-RPA\logs\worker_20261115_184126.log
+======================================================================
+Worker del cotizador arriba — id: Irvingamp7:11268
+  Revisión de la cola cada 5s (o al instante por aviso de la base)
+  Trabajos sin latido por más de 10 min se rescatan
+
+======================================================================
+TRABAJO 3adcd600-7121-446d-bdca-4112795f5fbc  [buscar]  intento 1/2
+SOLICITUD 817c6d6a-08e7-43d8-beda-096fb34d324a
+TEXTO: disco duro externo 1tb
+======================================================================
+
+[1/3] Interpretando con IA...
+  → Intentando modelo 1/3: gemini-3.6-flash
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+    1. [disco duro externo]    — query: 'disco duro externo 1tb' (x1)
+  Proveedores (según preferencia del usuario): ['amazon', 'bpc', 'cdc', 'cococo', 'compunomicos', 'dataformas', 'eurocomp', 'intcomex', 'intelec']
+
+[2/3] Corriendo scrapers...
+
+  → Item 171c466f-954f-41e3-a92b-f8871caf4f2e  (intento #1)
+    Variantes a probar: ['disco duro externo 1tb', 'disco duro externo', 'disco duro', 'disco']
+  ⚠ Activos en DB pero sin scraper implementado (se omiten): ['cococo', 'dataformas', 'intcomex', 'intelec']
+  Corriendo 5 scrapers en paralelo (máx 1 a la vez)...
+
+▶ amazon
+  [amazon] Cargando https://www.amazon.com/s?k=disco+duro+externo+1tb
+  [amazon] 16 productos detectados
+  ✓ 16 productos (28176 ms)
+
+▶ bpc
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=disco+duro+externo+1tb
+  [bpc] Productos obtenidos: 0
+  [bpc] 'disco duro externo 1tb' → 0 productos (0 nuevos). Acumulado: 0
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=disco+duro+externo
+  [bpc] Productos obtenidos: 2
+  [bpc] 'disco duro externo' → 2 productos (2 nuevos). Acumulado: 2
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=disco+duro
+  [bpc] Productos obtenidos: 2
+  [bpc] 'disco duro' → 2 productos (0 nuevos). Acumulado: 2
+  [bpc] Cargando https://www.mayoristabpc.com/busqueda?s=disco
+  [bpc] Productos obtenidos: 4
+  [bpc] 'disco' → 4 productos (2 nuevos). Acumulado: 4
+  [bpc] cascada: 4 variantes → 4 productos
+  ✓ 4 productos (10932 ms)
+
+▶ cdc
+  [cdc] Sesión iniciada con éxito.
+  [cdc] Buscando: 'disco duro externo 1tb'
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  [cdc] 'disco duro externo 1tb' → 0 productos (0 nuevos). Acumulado: 0
+  [cdc] Buscando: 'disco duro externo'
+  [cdc] Listado obtenido (0 artículos). Extrayendo detalle de 0 productos...
+  [cdc] 'disco duro externo' → 0 productos (0 nuevos). Acumulado: 0
+  [cdc] Buscando: 'disco duro'
+  [cdc] Listado obtenido (1 artículos). Extrayendo detalle de 1 productos...
+  [cdc] 'disco duro' → 1 productos (1 nuevos). Acumulado: 1
+  [cdc] Buscando: 'disco'
+  [cdc] Listado obtenido (30 artículos). Extrayendo detalle de 30 productos...
+  [cdc] 'disco' → 30 productos (29 nuevos). Acumulado: 30
+  [cdc] cascada: 4 variantes → 30 productos
+  ✓ 30 productos (16558 ms)
+
+▶ compunomicos
+  [compunomicos] Cargando https://compunomicos.com/?s=disco+duro+externo+1tb&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  [compunomicos] 'disco duro externo 1tb' → 0 productos (0 nuevos). Acumulado: 0
+  [compunomicos] Cargando https://compunomicos.com/?s=disco+duro+externo&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  [compunomicos] 'disco duro externo' → 0 productos (0 nuevos). Acumulado: 0
+  [compunomicos] Cargando https://compunomicos.com/?s=disco+duro&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  [compunomicos] 'disco duro' → 0 productos (0 nuevos). Acumulado: 0
+  [compunomicos] Cargando https://compunomicos.com/?s=disco&post_type=product
+  [compunomicos] Productos obtenidos: 0
+  [compunomicos] 'disco' → 0 productos (0 nuevos). Acumulado: 0
+  [compunomicos] cascada: 4 variantes → 0 productos
+  ✓ 0 productos (6319 ms)
+
+▶ eurocomp
+  [eurocomp] Buscando: disco duro externo 1tb
+  [eurocomp] Sin coincidencias para esta búsqueda
+  [eurocomp] 'disco duro externo 1tb' → 0 productos (0 nuevos). Acumulado: 0
+  [eurocomp] Buscando: disco duro externo
+  [eurocomp] Sin coincidencias para esta búsqueda
+  [eurocomp] 'disco duro externo' → 0 productos (0 nuevos). Acumulado: 0
+  [eurocomp] Buscando: disco duro
+  [eurocomp] Procesando 10 productos
+  [eurocomp] 'disco duro' → 10 productos (10 nuevos). Acumulado: 10
+  [eurocomp] cascada: 3 variantes → 10 productos
+  ✓ 10 productos (5526 ms)
+    [amazon] 16 crudos → guardados 14 (exacto:8 bueno:3 similar:1 dudoso:2)
+      ↳ 2 no llegaron a la pantalla: 2 sin_precio_visible
+         · [sin_precio_visible] Mini disco disco duro portátil LaCie Rugged USB 3.0
+         · [sin_precio_visible] Seagate - Concentrador de Game Drive, disco duro externo de 8 TB, Desk
+    [bpc] 4 crudos → guardados 0 (exacto:0 bueno:0 similar:0 dudoso:0)
+      ↳ 4 no llegaron a la pantalla: 4 sin_precio_visible
+         · [sin_precio_visible] DELL PRO MFF I5 / 16GB RAM...
+         · [sin_precio_visible] DELL PRO MFF I5 / 8GB RAM /...
+         · [sin_precio_visible] SERVIDOR DELL POWEREDGE T160
+    [cdc] 30 crudos → guardados 29 (exacto:0 bueno:4 similar:1 dudoso:24)
+      ↳ 1 no llegaron a la pantalla: 1 es un accesorio: 'cable' (blacklist disco)
+         · [es un accesorio: 'cable' (blacklist disco)] CABLE PODER AGILER SATA PARA DISCO DURO AGI-1932
+    [compunomicos] 0 crudos — el scraper no encontró nada
+    [eurocomp] 10 crudos → guardados 7 (exacto:3 bueno:0 similar:4 dudoso:0)
+      ↳ 3 no llegaron a la pantalla: 3 relleno del buscador: no coincide en ninguna palabra
+         · [relleno del buscador: no coincide en ninguna palabra] ENCAPSULADOR USB 3.0 MICRO B NOVA AEB25021001C 2.5 PULG SATA 5V NEGRO
+         · [relleno del buscador: no coincide en ninguna palabra] GRABADORA DVR HIKVISION IDS-7204HUHI-M1 4 CANALES HASTA 8 MP / 4K HAST
+         · [relleno del buscador: no coincide en ninguna palabra] TARJETA MADRE ASUS PRIME B850M-A AM5 MICRO-ATX DDR5 90MB1LQ0-M0EAY0 NE
+
+[3/3] Renglón terminado.
+
+✓ Trabajo terminado en 90.2s
+  Estado de la solicitud: lista
+
+⏹ Señal 2 recibida. Termino el trabajo en curso y salgo.
+Worker detenido limpiamente.

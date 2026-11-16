@@ -66,8 +66,8 @@ from cococo import CococoScraper
 from eurocomp import EurocompScraper
 from intcomex import IntcomexScraper
 from cdc import CDCScraper
-from matcher import Matcher, limpiar_query
-from modelo import ProductoSolicitado, ResultadoScraper
+from matcher import Matcher, limpiar_query, variantes_query
+from modelo import ProductoEncontrado, ProductoSolicitado, ResultadoScraper
 
 # ---------------------------------------------------------------------
 # Registro de scrapers disponibles (código → clase)
@@ -81,7 +81,7 @@ SCRAPERS_DISPONIBLES = {
     "eurocomp": EurocompScraper,
     # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
     # "cococo": CococoScraper,  # pagina rara
-    # "dataformas": DataformasScraper,  # pidio restablecer la contraseña
+    "dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,
 }
 
@@ -92,6 +92,12 @@ UMBRAL_MATCHER = 45.0
 # proveedor consideró relevantes y que el vendedor puede querer mirar. Lo que NO
 # se guarda es lo que el matcher descarta (sin precio, accesorios, relleno).
 TIERS_A_GUARDAR = ("exacto", "bueno", "similar", "dudoso")
+
+
+# Cuántos productos útiles se intentan juntar por proveedor antes de dejar de
+# degradar la query. Medido en Eurocomp: "laptop dell 16gb ram" traía 3 y
+# "laptop dell" traía 9 — con 3 el vendedor tiene poco con qué trabajar.
+MINIMO_PRODUCTOS_CASCADA = int(os.getenv("SCRAPER_MINIMO_PRODUCTOS", "8"))
 
 
 # ---------------------------------------------------------------------
@@ -204,14 +210,25 @@ def ejecutar_scrapers_OLD(
     return resultados
 
 
-def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoScraper]:
+def ejecutar_scrapers(
+    query: str | list[str], codigos_activos: list[str]
+) -> list[ResultadoScraper]:
     """Corre los scrapers EN PARALELO, en tandas de hasta MAX_PARALELO a la vez.
 
     Cada scraper abre su PROPIO navegador dentro de su PROPIO hilo. Nada se
     comparte entre ellos, así que un scraper no interfiere con otro ni con el
     aislamiento de errores. Con 8 activos y MAX_PARALELO=3, corren 3+3+2.
+
+    `query` acepta un texto o una LISTA de variantes (búsqueda en cascada). Con
+    una lista, cada proveedor prueba las variantes en su propia sesión hasta
+    juntar suficientes productos — ver _buscar_en_cascada(). Se acepta el texto
+    suelto para no romper a quien llame con un string.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    variantes = [query] if isinstance(query, str) else [v for v in query if v]
+    if not variantes:
+        return []
 
     # Cuántos navegadores a la vez. Por defecto 1: con 3 simultáneos, BPC,
     # Eurocomp y CDC fallaban por timeout y parecía problema de los sitios,
@@ -245,7 +262,7 @@ def ejecutar_scrapers(query: str, codigos_activos: list[str]) -> list[ResultadoS
 
     with ThreadPoolExecutor(max_workers=MAX_PARALELO) as pool:
         futuros = {
-            pool.submit(_correr_un_scraper, codigo, ScraperCls, query): codigo
+            pool.submit(_correr_un_scraper, codigo, ScraperCls, variantes): codigo
             for codigo, ScraperCls in a_correr
         }
         for futuro in as_completed(futuros):
@@ -288,7 +305,7 @@ def _correr_un_scraper_OLD(codigo, ScraperCls, query, browser) -> ResultadoScrap
         )
 
 
-def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
+def _correr_un_scraper(codigo, ScraperCls, variantes) -> ResultadoScraper:
     """
     Corre UN scraper de punta a punta, con su PROPIO navegador, aislado.
 
@@ -327,13 +344,15 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
                     )
                     try:
                         with ScraperCls(browser) as scraper:
-                            resultado = scraper.ejecutar(query)
+                            resultado = _buscar_en_cascada(
+                                scraper, codigo, variantes, buffer
+                            )
                     finally:
                         browser.close()
             else:
                 # Autónomo (amazon/patchright): se provisiona su propio browser
                 with ScraperCls(browser=None) as scraper:
-                    resultado = scraper.ejecutar(query)
+                    resultado = _buscar_en_cascada(scraper, codigo, variantes, buffer)
 
             _log_resultado_en(buffer, resultado)
 
@@ -346,7 +365,7 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
             )
             resultado = ResultadoScraper(
                 proveedor=codigo,
-                query=query,
+                query=variantes[0] if variantes else "",
                 exitoso=False,
                 productos=[],
                 duracion_ms=duracion,
@@ -358,6 +377,88 @@ def _correr_un_scraper(codigo, ScraperCls, query) -> ResultadoScraper:
     print(f"\n▶ {codigo}")
     print(buffer.getvalue(), end="")
     return resultado
+
+
+def _buscar_en_cascada(scraper, codigo, variantes, buffer) -> ResultadoScraper:
+    """
+    Prueba las variantes de la query en la MISMA sesión del navegador, hasta
+    juntar MINIMO_PRODUCTOS_CASCADA productos distintos o agotarlas.
+
+    Por qué dentro de la misma sesión: si cada variante abriera su propio
+    navegador, Eurocomp y CDC tendrían que loguearse de nuevo en cada intento.
+    Tres variantes serían tres logins, y eso sí reventaría los sitios. Acá se
+    entra una vez y se busca varias.
+
+    Por qué ACUMULA en lugar de parar en la primera que devuelve algo: medido en
+    Eurocomp, "laptop dell 16gb ram" trae 3 productos y "laptop dell" trae 9. Con
+    3 el vendedor tiene poco con qué trabajar. Acumulando, ve los 3 exactos
+    arriba (el matcher los ordena) y 6 alternativas Dell debajo.
+
+    Si una variante FALLA se corta la cascada: un scraper que ya falló una vez
+    probablemente falle en las demás, y no tiene sentido gastar tres timeouts
+    de 30 segundos en lugar de uno.
+    """
+    acumulados: list[ProductoEncontrado] = []
+    claves_vistas: set[str] = set()
+    usadas: list[str] = []
+    duracion_total = 0
+    ultimo_error: str | None = None
+
+    for i, variante in enumerate(variantes, 1):
+        resultado = scraper.ejecutar(variante)
+        duracion_total += resultado.duracion_ms
+        usadas.append(variante)
+
+        if not resultado.exitoso:
+            ultimo_error = resultado.error
+            print(
+                f"  [{codigo}] la variante {variante!r} falló; corto la cascada",
+                file=buffer,
+            )
+            break
+
+        nuevos = 0
+        for p in resultado.productos:
+            # La URL identifica al producto; el nombre es el respaldo por si el
+            # scraper no la trajo.
+            clave = (p.url_detalle or p.nombre or "").strip().lower()
+            if not clave or clave in claves_vistas:
+                continue
+            claves_vistas.add(clave)
+            acumulados.append(p)
+            nuevos += 1
+
+        # Solo se logea cuando hay algo que explicar: la primera variante que ya
+        # rinde no necesita comentario.
+        if i > 1 or len(acumulados) < MINIMO_PRODUCTOS_CASCADA:
+            print(
+                f"  [{codigo}] {variante!r} → {len(resultado.productos)} productos "
+                f"({nuevos} nuevos). Acumulado: {len(acumulados)}",
+                file=buffer,
+            )
+
+        if len(acumulados) >= MINIMO_PRODUCTOS_CASCADA:
+            break
+
+    if len(usadas) > 1:
+        print(
+            f"  [{codigo}] cascada: {len(usadas)} variantes → "
+            f"{len(acumulados)} productos",
+            file=buffer,
+        )
+
+    return ResultadoScraper(
+        proveedor=codigo,
+        # Todas las queries que se usaron, para que quede en
+        # scraper_ejecuciones.query_usada y el vendedor vea cómo se buscó.
+        query=" | ".join(usadas),
+        # Sin productos pero sin error es una búsqueda legítimamente vacía,
+        # no un fallo del proveedor.
+        exitoso=bool(acumulados) or ultimo_error is None,
+        productos=acumulados,
+        duracion_ms=duracion_total,
+        error=ultimo_error if not acumulados else None,
+    )
 
 
 def _log_resultado_en(buffer, resultado: ResultadoScraper) -> None:
@@ -402,10 +503,15 @@ def procesar_item(
     que uno que no trajo nada, y no hay manera de saber si el problema es el
     precio, la blacklist, el matcher o el scraper.
     """
-    query = solicitado.query_sugerida
-    print(f"\n  → Item {item_id}  (intento #{intento_numero})  query: '{query}'")
+    # Variantes de la query, de la más específica a la más general. Cada
+    # proveedor las prueba hasta juntar suficientes productos: Eurocomp se
+    # queda en cero con cuatro palabras y rinde con dos, Amazon aguanta las
+    # cuatro. Por eso la cascada es por proveedor y no global.
+    variantes = variantes_query(solicitado.query_sugerida, solicitado)
+    print(f"\n  → Item {item_id}  (intento #{intento_numero})")
+    print(f"    Variantes a probar: {variantes}")
 
-    resultados_scrapers = ejecutar_scrapers(query, codigos_activos)
+    resultados_scrapers = ejecutar_scrapers(variantes, codigos_activos)
 
     for r in resultados_scrapers:
         # 1. Guardar la ejecución del scraper (siempre, exitosa o no)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import warnings
 from typing import Any
@@ -30,6 +31,14 @@ GEMINI_MODELOS_FALLBACK = [
     "gemini-3.5-flash-lite",  # más liviano, menos demanda
     "gemini-3.5-flash",  # estable
 ]
+
+# Interruptor general. Con USAR_IA=false el pipeline no llama a Gemini:
+# arma la query con el texto del vendedor y sigue de largo.
+USAR_IA = os.getenv("USAR_IA", "true").strip().lower() not in ("false", "0", "no")
+
+# Tiempo máximo por petición. Sin esto el SDK espera indefinidamente y un
+# modelo que no responde congela el worker completo.
+IA_TIMEOUT_S = float(os.getenv("IA_TIMEOUT_S", "20"))
 
 
 PROMPT_SISTEMA = """Eres un asistente que extrae peticiones de cotizacion de productos \
@@ -123,17 +132,31 @@ class InterpretadorIA:
         if self.provider == "gemini":
             if not config.gemini_api_key:
                 raise RuntimeError("GEMINI_API_KEY vacia en .env")
-            self._client = genai.Client(api_key=config.gemini_api_key)
+            self._client = genai.Client(
+                api_key=config.gemini_api_key,
+                http_options=types.HttpOptions(timeout=int(IA_TIMEOUT_S * 1000)),
+            )
             # Lista completa: modelo primario del .env + fallbacks
             self._modelos = [config.gemini_model] + [
                 m for m in GEMINI_MODELOS_FALLBACK if m != config.gemini_model
             ]
+            print(
+                f"  [ia] modelo del .env: {config.gemini_model} | "
+                f"cascada: {' → '.join(self._modelos)} | "
+                f"timeout: {IA_TIMEOUT_S}s",
+                flush=True,
+            )
         else:
             raise NotImplementedError(
                 f"Proveedor IA '{self.provider}' aun no implementado"
             )
 
     def interpretar(self, texto: str) -> dict[str, Any]:
+        # ---- Capa 0: interruptor ----
+        if not USAR_IA:
+            print("  [ia] USAR_IA=false: no se consulta a Gemini", flush=True)
+            return _fallback_sin_ia(texto)
+
         # ---- Capa 1: cache ----
         clave = _cache_key(texto)
         if clave in _cache:
@@ -187,7 +210,13 @@ class InterpretadorIA:
         espera = 2  # segundos
 
         for intento in range(1, max_intentos + 1):
+            inicio = time.perf_counter()
             try:
+                print(
+                    f"    [ia] intento {intento}/{max_intentos} → petición a "
+                    f"{modelo} (timeout {IA_TIMEOUT_S}s)...",
+                    flush=True,
+                )
                 respuesta = self._client.models.generate_content(
                     model=modelo,
                     contents=texto,
@@ -197,18 +226,46 @@ class InterpretadorIA:
                         temperature=0.1,
                     ),
                 )
+                print(
+                    f"    [ia] respondió en {time.perf_counter() - inicio:.1f}s",
+                    flush=True,
+                )
                 return json.loads(self._limpiar(respuesta.text))
 
-            except errors.ServerError:
+            except errors.ServerError as error:
+                tardo = time.perf_counter() - inicio
+                # Un 504 DEADLINE_EXCEEDED significa que ese modelo no alcanza a
+                # responder dentro del plazo de su propio backend. Reintentarlo
+                # da el mismo resultado: conviene pasar al siguiente modelo ya.
+                if "DEADLINE_EXCEEDED" in str(error) or "504" in str(error):
+                    print(
+                        f"    [ia] {modelo} agotó el plazo del servidor a los "
+                        f"{tardo:.1f}s; sin reintentos, va el siguiente modelo",
+                        flush=True,
+                    )
+                    raise
                 if intento < max_intentos:
                     print(
-                        f"    intento {intento}/{max_intentos} fallido, "
-                        f"esperando {espera}s..."
+                        f"    [ia] intento {intento}/{max_intentos} falló a los "
+                        f"{tardo:.1f}s ({str(error)[:120]}); "
+                        f"esperando {espera}s...",
+                        flush=True,
                     )
                     time.sleep(espera)
                     espera *= 2
                 else:
+                    print(
+                        f"    [ia] último intento falló a los {tardo:.1f}s",
+                        flush=True,
+                    )
                     raise  # el interpretar() de arriba se encarga
+            except Exception as error:
+                print(
+                    f"    [ia] {type(error).__name__} a los "
+                    f"{time.perf_counter() - inicio:.1f}s: {error}",
+                    flush=True,
+                )
+                raise
 
     @staticmethod
     def _limpiar(texto: str) -> str:
