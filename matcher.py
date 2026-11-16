@@ -450,6 +450,41 @@ def _posicion_de(termino: str, texto: str) -> int | None:
     return mejor
 
 
+def _categoria_del_nombre(texto_normalizado: str, max_palabras: int = 4) -> str | None:
+    """
+    Que ES la cosa, segun la primera categoria conocida que aparece en el texto.
+
+    Se apoya en como nombran los catalogos: el titulo empieza por el tipo de
+    producto y despues vienen marca, modelo y especificaciones. Sirve para los
+    dos lados — el nombre del candidato y lo que pidio el vendedor — porque el
+    criterio es el mismo.
+
+        "memoria ram laptop 16gb patriot"   -> memoria
+        "laptop gigabyte aero 14 ... 16gb"  -> laptop
+        "disco duro externo 1tb"            -> disco
+
+    Devuelve None si el texto no menciona ninguna categoria conocida, y en ese
+    caso no se filtra nada: preferimos dejar pasar un producto de mas antes que
+    descartar uno bueno por no reconocer su vocabulario.
+    """
+    # Solo el comienzo, por lo mismo que la blacklist: lo que viene despues son
+    # specs. "INTEL WHITEBOOK ING NO OS CI7-9750H 2.60-4.50/NO RAM/NO DD" es una
+    # laptop barebone, y leyendo el nombre entero el "NO RAM" la convertia en
+    # memoria.
+    inicio = " ".join(texto_normalizado.split()[:max_palabras])
+
+    mejor_categoria: str | None = None
+    mejor_posicion: int | None = None
+    for clave in SINONIMOS:
+        posicion = _posicion_de(clave, inicio)
+        if posicion is None:
+            continue
+        if mejor_posicion is None or posicion < mejor_posicion:
+            mejor_posicion = posicion
+            mejor_categoria = clave
+    return mejor_categoria
+
+
 # ---------------------------------------------------------------------
 # BLACKLIST por categoria: descarta accesorios cuando piden el producto
 # ---------------------------------------------------------------------
@@ -484,6 +519,12 @@ BLACKLIST_CATEGORIA: dict[str, list[str]] = {
         "disco",
         "ssd",
         "pantalla",
+        # Repuestos. Cococo vende "Repuesto Carcasa Dell Superior Laptop
+        # Wvftx", que pasaba como 'bueno 75' por decir "laptop" en el nombre.
+        "repuesto",
+        "carcasa",
+        "bisagra",
+        "touchpad",
     ],
     "impresora": ["cartucho", "tinta", "toner", "papel", "rodillo"],
     "mouse": ["mousepad", "pad para mouse", "alfombrilla", "receptor"],
@@ -647,6 +688,18 @@ class Matcher:
         }
         assert abs(sum(self.pesos.values()) - 1.0) < 0.01, "Pesos deben sumar 1.0"
 
+        # Cuando el vendedor escribio la marca a proposito, la marca manda: una
+        # HP de 8GB va arriba de una Dell de 16GB. Con los pesos normales las dos
+        # quedaban a 2 puntos y en el mismo grupo, porque perder la marca costaba
+        # casi lo mismo que perder la spec. No se descarta a las otras marcas,
+        # solo bajan de grupo: siguen visibles por si la HP no sirve.
+        self.pesos_con_marca = {
+            "texto": 0.45,
+            "marca": 0.40,
+            "specs": 0.15,
+        }
+        assert abs(sum(self.pesos_con_marca.values()) - 1.0) < 0.01
+
     # -----------------------------------------------------------------
     def calcular_todos(
         self,
@@ -765,12 +818,23 @@ class Matcher:
         if cat_key:
             palabras_negras = BLACKLIST_CATEGORIA.get(cat_key, [])
             if palabras_negras:
+                # La blacklist mira solo el COMIENZO del nombre. Los catalogos
+                # ponen primero que ES la cosa y despues las specs, asi que una
+                # palabra sospechosa que aparece tarde describe una
+                # especificacion, no al producto. Caso medido en CDC:
+                #   "INTEL WHITEBOOK ING NO OS CI7-9750H 2.60-4.50/NO RAM/NO DD"
+                # es una laptop barebone — el proveedor la categoriza en "LAPTOP
+                # INTEL" — y se descartaba por "ser una memoria", porque dice
+                # "NO RAM" en la palabra 8. Los accesorios reales que medimos
+                # traen la palabra en la primera o segunda: "MEMORIA RAM LAPTOP",
+                # "SOPORTE PARA LAPTOP", "MOCHILA PARA LAPTOP DELL".
+                inicio_nombre = " ".join(nombre_cand.split()[:4])
                 pos_categoria = _posicion_de(cat_key, nombre_cand)
                 for palabra in palabras_negras:
                     # Si el vendedor pidio justamente el accesorio, no filtramos.
                     if palabra in terminos:
                         continue
-                    pos_negra = _posicion_de(palabra, nombre_cand)
+                    pos_negra = _posicion_de(palabra, inicio_nombre)
                     if pos_negra is None:
                         continue
                     if pos_categoria is not None and pos_categoria < pos_negra:
@@ -784,6 +848,32 @@ class Matcher:
                         descartado=True,
                         razon_descarte=f"es un accesorio: '{palabra}' (blacklist {cat_key})",
                     )
+
+        # ---- Filtro duro: el producto tiene que SER de lo que se pidio ----
+        # La cobertura de palabras no distingue estos dos:
+        #   "MEMORIA RAM LAPTOP 16GB PATRIOT"  -> una memoria para laptop
+        #   "LAPTOP GIGABYTE AERO 14 ... 16GB" -> una laptop con 16GB de RAM
+        # Las dos fichas dicen memoria/ram, laptop y 16gb, asi que la laptop
+        # daba 4/4 de cobertura y salia 'exacto 100' buscando memorias: un
+        # producto de $1,476 marcado como perfecto cuando se pedia un repuesto
+        # de $130. Lo que las separa es el orden en que el catalogo las nombra.
+        #
+        # La categoria pedida sale de la IA cuando esta disponible, y del texto
+        # del vendedor cuando no: asi el filtro tambien funciona con USAR_IA=false.
+        cat_pedida = _categoria_del_nombre(
+            _normalizar(solicitado.categoria or solicitado.query_sugerida or "")
+        )
+        cat_producto = _categoria_del_nombre(nombre_cand)
+        if cat_pedida and cat_producto and cat_pedida != cat_producto:
+            return ResultadoMatch(
+                producto=candidato,
+                score_total=0.0,
+                score_texto=0.0,
+                score_marca=0.0,
+                score_specs=0.0,
+                descartado=True,
+                razon_descarte=f"el producto es {cat_producto}, no {cat_pedida}",
+            )
 
         # ---- Variantes (COMBO, USADA...): se aplican en los dos modos ----
         ajuste_var, etiquetas = self._ajuste_variantes(solicitado, nombre_cand)
@@ -856,10 +946,11 @@ class Matcher:
         score_marca = self._score_marca(solicitado, candidato, texto_cand)
         score_specs = self._score_specs(solicitado, candidato, texto_cand)
 
+        pesos = self.pesos_con_marca if solicitado.marca else self.pesos
         score_base = (
-            self.pesos["texto"] * score_texto
-            + self.pesos["marca"] * score_marca
-            + self.pesos["specs"] * score_specs
+            pesos["texto"] * score_texto
+            + pesos["marca"] * score_marca
+            + pesos["specs"] * score_specs
         )
 
         bonus_identidad = self._bonus_identidad(solicitado, texto_cand)

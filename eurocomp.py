@@ -112,35 +112,134 @@ class EurocompScraper(ScraperBase):
             )
             return []
 
-        cards = page.locator(self.SEL_CARD).all()
-
-        # Cuántos dice el sitio que hay, contra cuántos estamos leyendo. Sirve
-        # para saber si vale la pena paginar este proveedor.
         total_sitio = self._total_reportado(page)
-        if total_sitio is not None and total_sitio > len(cards):
+        url_plantilla, ultima_pagina = self._info_paginacion(page)
+        if total_sitio is not None:
             print(
-                f"  [eurocomp] El sitio reporta {total_sitio} artículos; "
-                f"en esta página hay {len(cards)}"
+                f"  [eurocomp] El sitio reporta {total_sitio} artículos "
+                f"en {ultima_pagina} página(s)"
             )
 
-        if not cards:
+        productos: list[ProductoEncontrado] = []
+        vistos: set[str] = set()
+        pagina = 1
+
+        while True:
+            if self._leer_pagina(page, pagina, productos, vistos) == 0:
+                break
+            if len(productos) >= config.scraper_max_resultados:
+                break
+            if pagina >= ultima_pagina or not url_plantilla:
+                break
+            pagina += 1
+            if not self._ir_a_pagina(page, url_plantilla, pagina):
+                print(f"  [eurocomp] Conservo los {len(productos)} ya leídos")
+                break
+
+        if not productos:
             print("  [eurocomp] Sin coincidencias para esta búsqueda")
             return []
 
-        print(
-            f"  [eurocomp] Procesando {min(len(cards), config.scraper_max_resultados)} productos"
-        )
+        print(f"  [eurocomp] Productos obtenidos: {len(productos)}")
+        return productos
 
-        productos: list[ProductoEncontrado] = []
-        for indice, card in enumerate(cards[: config.scraper_max_resultados]):
+    def _leer_pagina(
+        self,
+        page,
+        pagina: int,
+        productos: list[ProductoEncontrado],
+        vistos: set[str],
+    ) -> int:
+        """Parsea las tarjetas visibles y acumula las que no se habían leído.
+
+        Devuelve cuántas tarjetas había en la página (0 corta el recorrido).
+        """
+        cards = page.locator(self.SEL_CARD).all()
+        if not cards:
+            return 0
+
+        nuevos = 0
+        for indice, card in enumerate(cards):
+            if len(productos) >= config.scraper_max_resultados:
+                break
             try:
                 producto = self._parsear_card(card)
-                if producto:
-                    productos.append(producto)
             except Exception as error:
                 print(f"  [eurocomp] Error en card {indice}: {error}")
+                continue
+            if producto is None:
+                continue
+            clave = producto.sku or producto.url_detalle or producto.nombre
+            if clave in vistos:
+                continue
+            productos.append(producto)
+            vistos.add(clave)
+            nuevos += 1
 
-        return productos
+        print(
+            f"  [eurocomp] Página {pagina}: {len(cards)} tarjetas, "
+            f"{nuevos} nuevos (acumulado {len(productos)})"
+        )
+        return len(cards)
+
+    @staticmethod
+    def _info_paginacion(page) -> tuple[str | None, int]:
+        """Lee de la barra de paginación la URL AJAX y cuántas páginas hay.
+
+        Eurocomp pagina llamando LINK_ajax('item_explorar.php?...&page=N',
+        'main_div') desde el onclick de cada enlace. Tomamos una de esas URLs
+        como plantilla y el mayor page=N (el de "Última") como tope.
+        """
+        try:
+            datos = page.evaluate("""() => {
+                    const enlaces = Array.from(document.querySelectorAll(
+                        '.itemex-plus-pagination a.page-link[onclick]'
+                    ));
+                    let url = null;
+                    let ultima = 1;
+                    for (const a of enlaces) {
+                        const onclick = a.getAttribute('onclick') || '';
+                        const destino = onclick.match(/LINK_ajax\\('([^']+)'/);
+                        if (destino && !url) url = destino[1];
+                        const numero = onclick.match(/[?&]page=(\\d+)/);
+                        if (numero) {
+                            ultima = Math.max(ultima, parseInt(numero[1], 10));
+                        }
+                    }
+                    return {url, ultima};
+                }""")
+        except Exception as error:
+            print(f"  [eurocomp] No se pudo leer la paginación: {error}")
+            return None, 1
+
+        if not isinstance(datos, dict):
+            return None, 1
+        return datos.get("url"), max(1, int(datos.get("ultima") or 1))
+
+    def _ir_a_pagina(self, page, url_plantilla: str, pagina: int) -> bool:
+        """Carga una página del catálogo reutilizando el AJAX del propio sitio."""
+        url = re.sub(r"([?&]page=)\d+", rf"\g<1>{pagina}", url_plantilla)
+        if "page=" not in url:
+            url = f"{url}&page={pagina}"
+
+        try:
+            page.evaluate("destino => LINK_ajax(destino, 'main_div')", url)
+            page.wait_for_function(
+                """({cardSelector, esperada}) => {
+                    const activa = document.querySelector(
+                        '.itemex-plus-pagination .page-item.active .page-link'
+                    );
+                    if (!activa) return false;
+                    if (activa.textContent.trim() !== String(esperada)) return false;
+                    return document.querySelectorAll(cardSelector).length > 0;
+                }""",
+                arg={"cardSelector": self.SEL_CARD, "esperada": pagina},
+                timeout=self.ESPERA_RESULTADOS_MS,
+            )
+            return True
+        except Exception as error:
+            print(f"  [eurocomp] La página {pagina} no cargó: {error}")
+            return False
 
     def _esperar_respuesta(self, page) -> bool:
         """

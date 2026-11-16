@@ -76,11 +76,11 @@ from modelo import ProductoEncontrado, ProductoSolicitado, ResultadoScraper
 SCRAPERS_DISPONIBLES = {
     # "intelec": IntelecScraper,  # revisar mejor porque salio verificacion de no ser robot de cloudflare
     "amazon": AmazonScraper,
-    "bpc": BPCScraper,
+    # "bpc": BPCScraper, #no muestra precios sin login y no existe login
     "compunomicos": CompunomicosScraper,  # este creo que lo que vi iba producto a producto
     "eurocomp": EurocompScraper,
     # "intcomex": IntcomexScraper,  # pidio verificacion de dos pasos dificil a automatizar probar en el vps por un tema de ip
-    # "cococo": CococoScraper,  # pagina rara
+    "cococo": CococoScraper,  # pagina rara
     "dataformas": DataformasScraper,  # pidio restablecer la contraseña
     "cdc": CDCScraper,
 }

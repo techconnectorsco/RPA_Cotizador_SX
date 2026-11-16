@@ -21,12 +21,14 @@ class CococoScraper(ScraperBase):
     # El catálogo público sigue disponible cuando no se configura una cuenta.
     requiere_login = True
 
-    SEL_CARD = ".card-product"
-    SEL_PRODUCT_LINK = "a.product-link"
-    SEL_TITLE = "h3.product-name"
-    SEL_PRICE = "p.product-price"
-    SEL_IMAGE = ".image-wrapper img"
-    SEL_TAGS = ".card-product-badges"
+    # Cococo rediseñó la tienda y todas las clases pasaron a llevar el
+    # prefijo "coco-". Los de abajo salen del HTML actual de /shop.
+    SEL_CARD = ".coco-card-product"
+    SEL_PRODUCT_LINK = "a.coco-card-product__link"
+    SEL_TITLE = "h3.coco-card-product__name"
+    SEL_PRICE = "p.coco-card-product__price"
+    SEL_IMAGE = ".coco-card-product__img"
+    SEL_TAGS = ".coco-card-product__badges"
     SEL_NEXT_PAGE = "a.sp-page-link[aria-label='Go to page: {page}']"
     SEL_OVERLAY = ".overlay.zindex-10.overlay-lg-transparent.d-block"
 
@@ -133,12 +135,8 @@ class CococoScraper(ScraperBase):
         campo = page.locator('input[name="search"]').first
         campo.wait_for(state="visible", timeout=config.scraper_timeout_ms)
         campo.fill(texto)
-        page.evaluate(
-            "() => { window.__cococoZeroSince = null; }"
-        )
-        page.locator(".search-box_button button").click(
-            timeout=config.scraper_timeout_ms
-        )
+        page.evaluate("() => { window.__cococoZeroSince = null; }")
+        page.locator(".coco-search__btn").click(timeout=config.scraper_timeout_ms)
 
         try:
             print(
@@ -146,28 +144,22 @@ class CococoScraper(ScraperBase):
                 "las tarjetas estén visibles"
             )
             page.wait_for_function(
-                """({cardSelector, query}) => {
-                    const body = document.body?.innerText || '';
-                    const match = body.match(/(\\d+)\\s+resultados?\\s+para\\s+([^\\n]+)/i);
-                    const normalizar = value => value.normalize('NFD')
-                        .replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase().trim();
-                    const termino = match
-                        ? normalizar(match[2]).replace(/^[\\s"“'‘]+|[\\s"”'’]+$/g, '')
-                        : '';
-                    const conteoCoincide = match && termino.includes(normalizar(query));
+                """({cardSelector}) => {
                     const cards = Array.from(document.querySelectorAll(cardSelector))
                         .filter(card => card.getClientRects().length > 0);
-                    if (cards.length && (conteoCoincide || location.pathname.replace(/\\/$/, '').endsWith('/shop'))) {
-                        return true;
-                    }
-                    if (conteoCoincide && Number(match[1]) === 0 && !cards.length) {
+                    if (cards.length) return true;
+                    // La barra de la tienda muestra "N resultados" aparte del
+                    // titulo "Resultados para ...", asi que contamos solo eso.
+                    const body = document.body?.innerText || '';
+                    const m = body.match(/(\\d+)\\s+resultados?/i);
+                    if (m && Number(m[1]) === 0) {
                         if (!window.__cococoZeroSince) window.__cococoZeroSince = Date.now();
                         return Date.now() - window.__cococoZeroSince >= 3000;
                     }
                     window.__cococoZeroSince = null;
                     return false;
                 }""",
-                arg={"cardSelector": self.SEL_CARD, "query": texto},
+                arg={"cardSelector": self.SEL_CARD},
                 timeout=config.scraper_timeout_ms,
             )
         except Exception as error:
@@ -182,16 +174,16 @@ class CococoScraper(ScraperBase):
 
         self._esperar_catalogo_cargado()
         cards_actuales = page.evaluate(
-            """() => Array.from(document.querySelectorAll('.card-product'))
+            """() => Array.from(document.querySelectorAll('.coco-card-product'))
                 .filter(card => card.getClientRects().length > 0)
                 .map(card => {
                     const texto = selector => card.querySelector(selector)?.innerText?.trim() || '';
-                    const imagen = card.querySelector('.image-wrapper img');
-                    const badges = card.querySelector('.card-product-badges');
+                    const imagen = card.querySelector('.coco-card-product__img');
+                    const badges = card.querySelector('.coco-card-product__badges');
                     return {
-                        nombre: texto('h3.product-name, .label-name-product'),
-                        href: card.querySelector('a.product-link')?.getAttribute('href') || '',
-                        precio: texto('p.product-price'),
+                        nombre: texto('h3.coco-card-product__name'),
+                        href: card.querySelector('a.coco-card-product__link')?.getAttribute('href') || '',
+                        precio: texto('p.coco-card-product__price'),
                         imagen: imagen?.currentSrc || imagen?.getAttribute('src') || imagen?.getAttribute('data-src') || '',
                         etiquetas: badges?.innerText?.split('\\n').map(x => x.trim()).filter(Boolean) || [],
                         texto: card.innerText || ''
@@ -253,9 +245,7 @@ class CococoScraper(ScraperBase):
                 # Disparar el evento en el enlace mantiene activa la paginación
                 # de Cococo sin navegar a las fichas de producto.
                 try:
-                    siguiente.dispatch_event(
-                        "click", timeout=config.scraper_timeout_ms
-                    )
+                    siguiente.dispatch_event("click", timeout=config.scraper_timeout_ms)
                 except Exception as error:
                     print(
                         f"  [cococo] No se pudo activar la página "
@@ -409,8 +399,7 @@ class CococoScraper(ScraperBase):
                     if isinstance(registro, dict) and registro.get("id") is not None
                 }
                 categorias_register = sum(
-                    bool(registro.get("category"))
-                    for registro in reemplazos.values()
+                    bool(registro.get("category")) for registro in reemplazos.values()
                 )
                 categorias_lista = sum(
                     bool(fila.get("category")) for fila in api_productos_originales
@@ -444,7 +433,9 @@ class CococoScraper(ScraperBase):
                 if not reemplazos:
                     print(f"  [cococo] Estados HTTP de register: {estados_http}")
             except Exception as error:
-                print(f"  [cococo] No se pudo consultar productVisited/register: {error}")
+                print(
+                    f"  [cococo] No se pudo consultar productVisited/register: {error}"
+                )
 
         por_nombre = {
             self._normalizar_nombre(
@@ -477,12 +468,12 @@ class CococoScraper(ScraperBase):
             if codigo_adicional:
                 producto.extra["codigo_adicional"] = str(codigo_adicional).strip()
             producto.marca = (
-                marca_data.get("des_depa")
-                or marca_data.get("name")
-                or producto.marca
+                marca_data.get("des_depa") or marca_data.get("name") or producto.marca
             )
             if isinstance(categoria_data, dict):
-                categoria = categoria_data.get("name") or categoria_data.get("description")
+                categoria = categoria_data.get("name") or categoria_data.get(
+                    "description"
+                )
             elif isinstance(categoria_data, str):
                 categoria = categoria_data.strip()
             else:
@@ -527,9 +518,7 @@ class CococoScraper(ScraperBase):
 
         precio_original = " ".join(str(card.get("precio", "")).split()) or None
         # Cococo muestra el colón como ¢; el helper compartido reconoce ₡.
-        precio, moneda = self.limpiar_precio(
-            (precio_original or "").replace("¢", "₡")
-        )
+        precio, moneda = self.limpiar_precio((precio_original or "").replace("¢", "₡"))
 
         imagen = str(card.get("imagen", "")) or None
         url_imagen = self.url_absoluta(imagen, self.url_base) if imagen else None
@@ -548,7 +537,9 @@ class CococoScraper(ScraperBase):
             stock_texto=stock_texto,
             disponible=self._interpretar_disponibilidad(stock_texto),
             sku=self._extraer_campo(texto_card, "sku"),
-            marca=(self._extraer_campo(texto_card, "marca") or self._extraer_marca(nombre)),
+            marca=(
+                self._extraer_campo(texto_card, "marca") or self._extraer_marca(nombre)
+            ),
             categoria=self._extraer_campo(texto_card, "categoria"),
             extra={
                 "mpn": None,
@@ -580,11 +571,36 @@ class CococoScraper(ScraperBase):
     def _extraer_marca(nombre: str) -> str | None:
         """Detecta marcas conocidas cuando forman parte del nombre de tarjeta."""
         marcas = (
-            "LOGITECH", "MICROSOFT", "HYPERX", "KINGSTON", "SAMSUNG",
-            "LENOVO", "ASUS", "ACER", "APPLE", "XIAOMI", "HUAWEI",
-            "TOSHIBA", "PHILIPS", "VIEWSONIC", "AOC", "DELL", "HP",
-            "AMD", "INTEL", "NVIDIA", "RAZER", "CANON", "EPSON",
-            "BROTHER", "JBL", "SONY", "LG", "MSI", "TP-LINK", "UGREEN",
+            "LOGITECH",
+            "MICROSOFT",
+            "HYPERX",
+            "KINGSTON",
+            "SAMSUNG",
+            "LENOVO",
+            "ASUS",
+            "ACER",
+            "APPLE",
+            "XIAOMI",
+            "HUAWEI",
+            "TOSHIBA",
+            "PHILIPS",
+            "VIEWSONIC",
+            "AOC",
+            "DELL",
+            "HP",
+            "AMD",
+            "INTEL",
+            "NVIDIA",
+            "RAZER",
+            "CANON",
+            "EPSON",
+            "BROTHER",
+            "JBL",
+            "SONY",
+            "LG",
+            "MSI",
+            "TP-LINK",
+            "UGREEN",
         )
         titulo = re.sub(r"\s+", " ", nombre).upper()
         for marca in marcas:
@@ -594,7 +610,7 @@ class CococoScraper(ScraperBase):
 
     @staticmethod
     def _primer_href(page) -> str | None:
-        enlace = page.locator("a.product-link").first
+        enlace = page.locator("a.coco-card-product__link").first
         return enlace.get_attribute("href") if enlace.count() else None
 
     @staticmethod

@@ -52,7 +52,9 @@ class CDCScraper(ScraperBase):
         usuario = os.getenv("CDC_USER", "").strip()
         password = os.getenv("CDC_PASSWORD", "")
         if not usuario or not password:
-            print("  [cdc] CDC_USER / CDC_PASSWORD no configurados en .env. Continuando en modo consulta pública.")
+            print(
+                "  [cdc] CDC_USER / CDC_PASSWORD no configurados en .env. Continuando en modo consulta pública."
+            )
             self._autenticado = False
             return
 
@@ -69,7 +71,11 @@ class CDCScraper(ScraperBase):
         page = self._page
         assert page is not None
 
-        page.goto(self.url_base, wait_until="domcontentloaded", timeout=config.scraper_timeout_ms)
+        page.goto(
+            self.url_base,
+            wait_until="domcontentloaded",
+            timeout=config.scraper_timeout_ms,
+        )
         page.locator(self.SEL_LOGIN_INFO).click()
         page.locator(self.SEL_LOGIN_LINK).click()
         page.wait_for_selector(self.SEL_LOGIN_USER, timeout=config.scraper_timeout_ms)
@@ -98,7 +104,11 @@ class CDCScraper(ScraperBase):
 
         print(f"  [cdc] Buscando: '{texto}'")
         if not page.url.startswith(self.url_base):
-            page.goto(self.url_base, wait_until="domcontentloaded", timeout=config.scraper_timeout_ms)
+            page.goto(
+                self.url_base,
+                wait_until="domcontentloaded",
+                timeout=config.scraper_timeout_ms,
+            )
 
         page.fill(self.SEL_SEARCH_INPUT, texto)
         page.locator(self.SEL_SEARCH_SUBMIT).click()
@@ -115,20 +125,127 @@ class CDCScraper(ScraperBase):
         )
 
         self._esperar_catalogo_cargado()
-        cards = page.locator(self.SEL_CARD).all()
-        total_a_procesar = min(len(cards), config.scraper_max_resultados)
-        print(f"  [cdc] Listado obtenido ({len(cards)} artículos). Extrayendo detalle de {total_a_procesar} productos...")
+
+        url_plantilla, ultima_pagina = self._info_paginacion(page)
+        if ultima_pagina > 1:
+            print(f"  [cdc] El catálogo tiene {ultima_pagina} página(s)")
 
         productos: list[ProductoEncontrado] = []
-        for indice, card in enumerate(cards[:total_a_procesar]):
-            try:
-                prod = self._parsear_card_con_detalle(card)
-                if prod:
-                    productos.append(prod)
-            except Exception as error:
-                print(f"  [cdc] Error procesando card {indice}: {error}")
+        vistos: set[str] = set()
+        pagina = 1
+
+        while True:
+            if self._leer_pagina(page, pagina, productos, vistos) == 0:
+                break
+            if len(productos) >= config.scraper_max_resultados:
+                break
+            if pagina >= ultima_pagina or not url_plantilla:
+                break
+            pagina += 1
+            if not self._ir_a_pagina(page, url_plantilla, pagina):
+                print(f"  [cdc] Conservo los {len(productos)} ya leídos")
+                break
 
         return productos
+
+    def _leer_pagina(
+        self,
+        page,
+        pagina: int,
+        productos: list[ProductoEncontrado],
+        vistos: set[str],
+    ) -> int:
+        """Lee las tarjetas visibles y acumula las que no se habían leído."""
+        cards = page.locator(self.SEL_CARD).all()
+        if not cards:
+            return 0
+
+        print(f"  [cdc] Página {pagina}: {len(cards)} artículos. Extrayendo detalle...")
+        nuevos = 0
+        for indice, card in enumerate(cards):
+            if len(productos) >= config.scraper_max_resultados:
+                break
+            try:
+                prod = self._parsear_card_con_detalle(card)
+            except Exception as error:
+                print(f"  [cdc] Error procesando card {indice}: {error}")
+                continue
+            if prod is None:
+                continue
+            clave = prod.sku or prod.url_detalle or prod.nombre
+            if clave in vistos:
+                continue
+            productos.append(prod)
+            vistos.add(clave)
+            nuevos += 1
+
+        print(
+            f"  [cdc] Página {pagina}: {nuevos} nuevos " f"(acumulado {len(productos)})"
+        )
+        return len(cards)
+
+    @staticmethod
+    def _info_paginacion(page) -> tuple[str | None, int]:
+        """URL AJAX de paginación y cuántas páginas hay.
+
+        CDC corre la misma plataforma que Eurocomp: pagina llamando
+        LINK_ajax('item_explorar.php?...&page=N', 'main_div') desde el onclick
+        de cada enlace, y el enlace "Última" informa el total.
+
+        Si la barra no está, devuelve (None, 1) y el recorrido se queda en la
+        primera página: el comportamiento de antes.
+        """
+        try:
+            datos = page.evaluate("""() => {
+                    const enlaces = Array.from(document.querySelectorAll(
+                        '.itemex-plus-pagination a.page-link[onclick]'
+                    ));
+                    let url = null;
+                    let ultima = 1;
+                    for (const a of enlaces) {
+                        const onclick = a.getAttribute('onclick') || '';
+                        const destino = onclick.match(/LINK_ajax\\('([^']+)'/);
+                        if (destino && !url) url = destino[1];
+                        const numero = onclick.match(/[?&]page=(\\d+)/);
+                        if (numero) {
+                            ultima = Math.max(ultima, parseInt(numero[1], 10));
+                        }
+                    }
+                    return {url, ultima};
+                }""")
+        except Exception as error:
+            print(f"  [cdc] No se pudo leer la paginación: {error}")
+            return None, 1
+
+        if not isinstance(datos, dict):
+            return None, 1
+        return datos.get("url"), max(1, int(datos.get("ultima") or 1))
+
+    def _ir_a_pagina(self, page, url_plantilla: str, pagina: int) -> bool:
+        """Carga una página del catálogo reutilizando el AJAX del propio sitio."""
+        url = re.sub(r"([?&]page=)\d+", rf"\g<1>{pagina}", url_plantilla)
+        if "page=" not in url:
+            url = f"{url}&page={pagina}"
+
+        try:
+            page.evaluate("destino => LINK_ajax(destino, 'main_div')", url)
+            page.wait_for_function(
+                """({cardSelector, esperada}) => {
+                    const activa = document.querySelector(
+                        '.itemex-plus-pagination .page-item.active .page-link'
+                    );
+                    if (!activa) return false;
+                    if (activa.textContent.trim() !== String(esperada)) return false;
+                    return document.querySelectorAll(cardSelector).length > 0;
+                }""",
+                arg={"cardSelector": self.SEL_CARD, "esperada": pagina},
+                timeout=config.scraper_timeout_ms,
+            )
+            self._esperar_catalogo_cargado()
+            return True
+        except Exception as error:
+            print(f"  [cdc] La página {pagina} no cargó: {error}")
+            return False
 
     def _parsear_card_con_detalle(self, card) -> ProductoEncontrado | None:
         nombre_el = card.locator(".itemex-plus-title").first
@@ -141,7 +258,10 @@ class CDCScraper(ScraperBase):
         # Datos básicos presentes en la card
         sku_card = self._texto(card, ".itemex-plus-code")
         if sku_card:
-            sku_card = re.sub(r"^C[oó]d:\s*", "", sku_card, flags=re.IGNORECASE).strip() or None
+            sku_card = (
+                re.sub(r"^C[oó]d:\s*", "", sku_card, flags=re.IGNORECASE).strip()
+                or None
+            )
 
         marca_card = self._texto(card, ".itemex-plus-badge-brand")
 
@@ -149,8 +269,9 @@ class CDCScraper(ScraperBase):
         url_imagen = self.url_absoluta(imagen, self.url_base) if imagen else None
 
         onclick = (
-            card.locator(".itemex-plus-media, .itemex-plus-btn-cart")
-            .first.get_attribute("onclick")
+            card.locator(
+                ".itemex-plus-media, .itemex-plus-btn-cart"
+            ).first.get_attribute("onclick")
             or ""
         )
         item_id = self._extraer_item_id(onclick)
@@ -177,7 +298,11 @@ class CDCScraper(ScraperBase):
 
         # Precios
         precio_raw = detalle_data.get("precio_texto") or precio_card_texto
-        if precio_raw and impuesto_texto and impuesto_texto.lower() not in precio_raw.lower():
+        if (
+            precio_raw
+            and impuesto_texto
+            and impuesto_texto.lower() not in precio_raw.lower()
+        ):
             precio_raw = f"{precio_raw} {impuesto_texto}".strip()
 
         precio, moneda = self.limpiar_precio(precio_raw or "")
@@ -186,7 +311,10 @@ class CDCScraper(ScraperBase):
         descuento_porcentaje = detalle_data.get("descuento_porcentaje")
 
         # Regla de negocio: si el stock numérico es <= 0, disponible debe ser False
-        if detalle_data.get("stock_numerico") is not None and detalle_data.get("stock_numerico") <= 0:
+        if (
+            detalle_data.get("stock_numerico") is not None
+            and detalle_data.get("stock_numerico") <= 0
+        ):
             disponible = False
 
         extra = {
@@ -256,8 +384,10 @@ class CDCScraper(ScraperBase):
             if "item_explorar" in a.get("onclick", "")
         ]
         cat_links = [
-            c for c in cat_links
-            if c.lower() not in ("inicio", "seguir explorando") and not c.lower().startswith("seguir")
+            c
+            for c in cat_links
+            if c.lower() not in ("inicio", "seguir explorando")
+            and not c.lower().startswith("seguir")
         ]
         if cat_links:
             data["categoria"] = " / ".join(cat_links)
@@ -311,15 +441,27 @@ class CDCScraper(ScraperBase):
 
         # Interpretación de stock numérico y booleano
         if stock_completo:
-            m = re.search(r"(\d+)\s*(?:en existencias?|uds?\.?|unidades?|disponibles?)", stock_completo, re.IGNORECASE)
+            m = re.search(
+                r"(\d+)\s*(?:en existencias?|uds?\.?|unidades?|disponibles?)",
+                stock_completo,
+                re.IGNORECASE,
+            )
             if m:
                 stock_num = int(m.group(1))
                 data["stock_numerico"] = stock_num
                 data["disponible"] = stock_num > 0
 
-            if re.search(r"\b(agotado|sin existencias?|no disponible|fuera de stock)\b", stock_completo, re.IGNORECASE):
+            if re.search(
+                r"\b(agotado|sin existencias?|no disponible|fuera de stock)\b",
+                stock_completo,
+                re.IGNORECASE,
+            ):
                 data["disponible"] = False
-            elif data["disponible"] is None and re.search(r"\b(disponible|en existencias?|en stock|bodega)\b", stock_completo, re.IGNORECASE):
+            elif data["disponible"] is None and re.search(
+                r"\b(disponible|en existencias?|en stock|bodega)\b",
+                stock_completo,
+                re.IGNORECASE,
+            ):
                 data["disponible"] = True
 
         # 4. Precios (cuando la sesión esté autenticada)
@@ -327,11 +469,17 @@ class CDCScraper(ScraperBase):
         if h4_el:
             strong_el = h4_el.find("strong")
             small_el = h4_el.find("small")
-            data["precio_texto"] = strong_el.get_text(strip=True) if strong_el else h4_el.get_text(strip=True)
+            data["precio_texto"] = (
+                strong_el.get_text(strip=True)
+                if strong_el
+                else h4_el.get_text(strip=True)
+            )
             if small_el:
                 data["impuesto_texto"] = small_el.get_text(strip=True)
         else:
-            precio_el = soup.select_one(".price-main, .itemshop-plus-price-panel .price")
+            precio_el = soup.select_one(
+                ".price-main, .itemshop-plus-price-panel .price"
+            )
             if precio_el:
                 data["precio_texto"] = precio_el.get_text(strip=True)
 
@@ -342,7 +490,9 @@ class CDCScraper(ScraperBase):
         """Limpia el precio y elimina sufijos fiscales (+ I.V.A) para que las siglas no interfieran con los decimales."""
         if not texto:
             return None, None
-        texto_limpio = re.sub(r"(?:\+|\b)i\.?v\.?a\.?", "", texto, flags=re.IGNORECASE).strip()
+        texto_limpio = re.sub(
+            r"(?:\+|\b)i\.?v\.?a\.?", "", texto, flags=re.IGNORECASE
+        ).strip()
         return super().limpiar_precio(texto_limpio)
 
     @staticmethod
