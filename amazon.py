@@ -119,6 +119,7 @@ class AmazonScraper(ScraperBase):
             return []
 
         self._scroll_ligero(page)
+        self._esperar_precios(page)
 
         cards = page.locator(self.SEL_CARD).all()
         print(f"  [amazon] {len(cards)} productos detectados")
@@ -131,6 +132,14 @@ class AmazonScraper(ScraperBase):
                     productos.append(producto)
             except Exception as e:
                 print(f"  [amazon] Error en card {i}: {e}")
+
+        sin_precio = sum(1 for p in productos if p.precio is None)
+        if productos and sin_precio > len(productos) / 2:
+            print(
+                f"  [amazon] {sin_precio} de {len(productos)} sin precio. "
+                "Guardo el HTML para ver si el dato esta en la pagina."
+            )
+            self._guardar_debug(page, query, sufijo="SIN_PRECIOS")
 
         return productos
 
@@ -282,6 +291,31 @@ class AmazonScraper(ScraperBase):
             return int(num)
         except (ValueError, AttributeError):
             return None
+
+    def _esperar_precios(self, page) -> None:
+        """Da tiempo a que la pagina termine de pintar los precios.
+
+        Amazon dibuja las tarjetas primero y los precios despues. El scroll
+        dispara esa carga, pero leer de inmediato agarra la pagina a medio
+        hidratar. Esperamos a que el 80% de las tarjetas tenga precio y, si
+        no llega, seguimos con lo que haya: puede que el sitio simplemente
+        no los este sirviendo.
+        """
+        try:
+            page.wait_for_function(
+                """({cardSelector}) => {
+                    const cards = Array.from(document.querySelectorAll(cardSelector));
+                    if (!cards.length) return false;
+                    const conPrecio = cards.filter(
+                        c => c.querySelector('.a-price .a-offscreen')
+                    ).length;
+                    return conPrecio >= Math.ceil(cards.length * 0.8);
+                }""",
+                arg={"cardSelector": self.SEL_CARD},
+                timeout=8000,
+            )
+        except Exception:
+            pass
 
     def _scroll_ligero(self, page) -> None:
         try:
